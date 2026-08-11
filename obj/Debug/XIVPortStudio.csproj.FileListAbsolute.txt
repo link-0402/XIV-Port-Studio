@@ -1,0 +1,8 @@
+H:\FFXIVmods\XIV Port Studio\obj\Debug\XIVPortStudio.csproj.AssemblyReference.cache
+H:\FFXIVmods\XIV Port Studio\obj\Debug\XIVPortStudio.GeneratedMSBuildEditorConfig.editorconfig
+H:\FFXIVmods\XIV Port Studio\obj\Debug\XIVPortStudio.AssemblyInfoInputs.cache
+H:\FFXIVmods\XIV Port Studio\obj\Debug\XIVPortStudio.AssemblyInfo.cs
+H:\FFXIVmods\XIV Port Studio\obj\Debug\XIVPortStudio.csproj.CoreCompileInputs.cache
+H:\FFXIVmods\XIV Port Studio\bin\Debug\XIVPortStudio.deps.json
+H:\FFXIVmods\XIV Port Studio\bin\Debug\XIVPortStudio.dll
+H:\FFXIVmods\XIV Port Studio\obj\Debug\XIVPortStudio.dll

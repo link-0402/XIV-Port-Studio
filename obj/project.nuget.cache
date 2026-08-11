@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "gpE0s88nfew=",
+  "success": true,
+  "projectFilePath": "H:\\FFXIVmods\\VSC Projects\\XIV Port Studio\\XIVPortStudio.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\leong\\.nuget\\packages\\dalamudpackager\\15.0.0\\dalamudpackager.15.0.0.nupkg.sha512",
+    "C:\\Users\\leong\\.nuget\\packages\\dotnet.reproduciblebuilds\\1.2.39\\dotnet.reproduciblebuilds.1.2.39.nupkg.sha512"
+  ],
+  "logs": []
+}
