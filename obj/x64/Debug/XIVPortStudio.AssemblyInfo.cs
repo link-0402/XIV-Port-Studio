@@ -13,11 +13,11 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("XIVPortStudio")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.1.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0.0+72cb250b31e81ea2563decdb60e7523476d16156")]
 [assembly: System.Reflection.AssemblyProductAttribute("XIVPortStudio")]
 [assembly: System.Reflection.AssemblyTitleAttribute("XIVPortStudio")]
 [assembly: System.Reflection.AssemblyVersionAttribute("0.1.0.0")]
-[assembly: System.Reflection.AssemblyMetadataAttribute("RepositoryUrl", "")]
+[assembly: System.Reflection.AssemblyMetadataAttribute("RepositoryUrl", "https://github.com/link-0402/XIV-Port-Studio.git")]
 [assembly: System.Runtime.Versioning.TargetPlatformAttribute("Windows7.0")]
 [assembly: System.Runtime.Versioning.SupportedOSPlatformAttribute("Windows7.0")]
 

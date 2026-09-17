@@ -22,6 +22,7 @@ public sealed class PenumbraIpcService : IDisposable
     private readonly ICallGateSubscriber<Dictionary<string, string>>                     _getModList;
     private readonly ICallGateSubscriber<string, string, (int, string, bool, bool)>      _getModPath;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>                       _getCollections;
+    private readonly ICallGateSubscriber<string, int>                                    _addMod;
 
     // ── Events ────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ public sealed class PenumbraIpcService : IDisposable
         _getModList      = pi.GetIpcSubscriber<Dictionary<string, string>>       ("Penumbra.GetModList");
         _getModPath      = pi.GetIpcSubscriber<string, string, (int, string, bool, bool)>("Penumbra.GetModPath.V5");
         _getCollections  = pi.GetIpcSubscriber<Dictionary<Guid, string>>         ("Penumbra.GetCollections.V5");
+        _addMod          = pi.GetIpcSubscriber<string, int>                      ("Penumbra.AddMod.V5");
 
         try
         {
@@ -115,6 +117,18 @@ public sealed class PenumbraIpcService : IDisposable
     {
         try   { return _getCollections.InvokeFunc(); }
         catch (Exception ex) { _log.Debug(ex, "[XPS] GetCollections failed"); return null; }
+    }
+
+    /// <summary>
+    /// Registers a mod folder that already exists on disk with Penumbra, without
+    /// requiring a full mod-directory rediscovery. <paramref name="modDirectory"/>
+    /// is the folder name under the Penumbra root (not a full path). Returns
+    /// Success both when newly added and when it was already loaded.
+    /// </summary>
+    public PenumbraApiEc AddMod(string modDirectory)
+    {
+        try   { return (PenumbraApiEc)_addMod.InvokeFunc(modDirectory); }
+        catch (Exception ex) { _log.Warning(ex, "[XPS] AddMod failed"); return PenumbraApiEc.UnknownError; }
     }
 }
 

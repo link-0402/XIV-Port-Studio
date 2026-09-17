@@ -14,7 +14,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar)
     {
         _plugin = plugin;
-        Size          = new Vector2(420, 90);
+        Size          = new Vector2(420, 140);
         SizeCondition = ImGuiCond.Always;
     }
 
@@ -34,5 +34,11 @@ public sealed class ConfigWindow : Window, IDisposable
             : "Penumbra: not available");
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Penumbra IPC is used to inspect mod folders and, later, to export the finished item as a mod.");
+
+        ImGui.Spacing();
+
+        ImGui.TextWrapped(
+            "Textures are converted to .tex fully in-process: uncompressed textures use the " +
+            "game's B8G8R8A8 (RGBA 32-bit) format, and BC7 compression runs inside the plugin.");
     }
 }

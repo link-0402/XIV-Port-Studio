@@ -1,7 +1,36 @@
 {
-  "version": 3,
+  "version": 4,
   "targets": {
-    "net10.0-windows7.0": {
+    "net10.0-windows": {
+      "BCnEncoder.Net/2.3.0": {
+        "type": "package",
+        "dependencies": {
+          "CommunityToolkit.HighPerformance": "8.4.0"
+        },
+        "compile": {
+          "lib/netstandard2.1/BCnEncoder.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/netstandard2.1/BCnEncoder.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "CommunityToolkit.HighPerformance/8.4.0": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/CommunityToolkit.HighPerformance.dll": {
+            "related": ".pdb;.xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/CommunityToolkit.HighPerformance.dll": {
+            "related": ".pdb;.xml"
+          }
+        }
+      },
       "DalamudPackager/15.0.0": {
         "type": "package",
         "build": {
@@ -22,10 +51,67 @@
           "buildMultiTargeting/DotNet.ReproducibleBuilds.props": {},
           "buildMultiTargeting/DotNet.ReproducibleBuilds.targets": {}
         }
+      },
+      "SixLabors.ImageSharp/3.1.12": {
+        "type": "package",
+        "compile": {
+          "lib/net6.0/SixLabors.ImageSharp.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net6.0/SixLabors.ImageSharp.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "build/SixLabors.ImageSharp.props": {}
+        }
       }
     }
   },
   "libraries": {
+    "BCnEncoder.Net/2.3.0": {
+      "sha512": "DJhHJiBJKXUXxlkkrv74ckzJb3wYxqIAZHjXD9G76kpsD0YyJOmqtNufHWEuJe0eH0tB1tCZn80/3JV2UVP7yQ==",
+      "type": "package",
+      "path": "bcnencoder.net/2.3.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "bcnencoder.net.2.3.0.nupkg.sha512",
+        "bcnencoder.net.nuspec",
+        "lib/netstandard2.0/BCnEncoder.dll",
+        "lib/netstandard2.0/BCnEncoder.xml",
+        "lib/netstandard2.1/BCnEncoder.dll",
+        "lib/netstandard2.1/BCnEncoder.xml"
+      ]
+    },
+    "CommunityToolkit.HighPerformance/8.4.0": {
+      "sha512": "flxspiBs0G/0GMp7IK2J2ijV9bTG6hEwFc/z6ekHqB6nwRJ4Ry2yLdx+TkbCUYFCl4XhABkAwomeKbT6zM2Zlg==",
+      "type": "package",
+      "path": "communitytoolkit.highperformance/8.4.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Icon.png",
+        "License.md",
+        "ThirdPartyNotices.txt",
+        "communitytoolkit.highperformance.8.4.0.nupkg.sha512",
+        "communitytoolkit.highperformance.nuspec",
+        "lib/net7.0/CommunityToolkit.HighPerformance.dll",
+        "lib/net7.0/CommunityToolkit.HighPerformance.pdb",
+        "lib/net7.0/CommunityToolkit.HighPerformance.xml",
+        "lib/net8.0/CommunityToolkit.HighPerformance.dll",
+        "lib/net8.0/CommunityToolkit.HighPerformance.pdb",
+        "lib/net8.0/CommunityToolkit.HighPerformance.xml",
+        "lib/netstandard2.0/CommunityToolkit.HighPerformance.dll",
+        "lib/netstandard2.0/CommunityToolkit.HighPerformance.pdb",
+        "lib/netstandard2.0/CommunityToolkit.HighPerformance.xml",
+        "lib/netstandard2.1/CommunityToolkit.HighPerformance.dll",
+        "lib/netstandard2.1/CommunityToolkit.HighPerformance.pdb",
+        "lib/netstandard2.1/CommunityToolkit.HighPerformance.xml"
+      ]
+    },
     "DalamudPackager/15.0.0": {
       "sha512": "411vwC8/X8Z/sQ2TI6v3SvOn66xFPeOjFn3Zn+h0d3Ox2t1kFm66AhDvmx/qcMwVrR+Hidxj0dadpQ2dgyXMBQ==",
       "type": "package",
@@ -63,45 +149,56 @@
         "dotnet.reproduciblebuilds.1.2.39.nupkg.sha512",
         "dotnet.reproduciblebuilds.nuspec"
       ]
+    },
+    "SixLabors.ImageSharp/3.1.12": {
+      "sha512": "iAg6zifihXEFS/t7fiHhZBGAdCp3FavsF4i2ZIDp0JfeYeDVzvmlbY1CNhhIKimaIzrzSi5M/NBFcWvZT2rB/A==",
+      "type": "package",
+      "path": "sixlabors.imagesharp/3.1.12",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "build/SixLabors.ImageSharp.props",
+        "lib/net6.0/SixLabors.ImageSharp.dll",
+        "lib/net6.0/SixLabors.ImageSharp.xml",
+        "sixlabors.imagesharp.128.png",
+        "sixlabors.imagesharp.3.1.12.nupkg.sha512",
+        "sixlabors.imagesharp.nuspec"
+      ]
     }
   },
   "projectFileDependencyGroups": {
-    "net10.0-windows7.0": [
+    "net10.0-windows": [
+      "BCnEncoder.Net >= 2.3.0",
       "DalamudPackager >= 15.0.0",
-      "DotNet.ReproducibleBuilds >= 1.2.39"
+      "DotNet.ReproducibleBuilds >= 1.2.39",
+      "SixLabors.ImageSharp >= 3.1.12"
     ]
   },
   "packageFolders": {
-    "C:\\Users\\leong\\.nuget\\packages\\": {},
-    "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
+    "C:\\Users\\leong\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "0.1.0",
     "restore": {
-      "projectUniqueName": "H:\\FFXIVmods\\VSC Projects\\XIV Port Studio\\XIVPortStudio.csproj",
+      "projectUniqueName": "E:\\FFXIVmods\\VSC Projects\\XIV Port Studio\\XIVPortStudio.csproj",
       "projectName": "XIVPortStudio",
-      "projectPath": "H:\\FFXIVmods\\VSC Projects\\XIV Port Studio\\XIVPortStudio.csproj",
+      "projectPath": "E:\\FFXIVmods\\VSC Projects\\XIV Port Studio\\XIVPortStudio.csproj",
       "packagesPath": "C:\\Users\\leong\\.nuget\\packages\\",
-      "outputPath": "H:\\FFXIVmods\\VSC Projects\\XIV Port Studio\\obj\\",
+      "outputPath": "E:\\FFXIVmods\\VSC Projects\\XIV Port Studio\\obj\\",
       "projectStyle": "PackageReference",
-      "fallbackFolders": [
-        "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
-      ],
       "configFilePaths": [
-        "C:\\Users\\leong\\AppData\\Roaming\\NuGet\\NuGet.Config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        "C:\\Users\\leong\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net10.0-windows"
       ],
       "sources": {
-        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
-        "c:\\program files\\dotnet\\library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
-        "net10.0-windows7.0": {
+        "net10.0-windows": {
+          "framework": "net10.0-windows7.0",
           "targetAlias": "net10.0-windows",
           "projectReferences": {}
         }
@@ -119,12 +216,17 @@
         "auditLevel": "low",
         "auditMode": "all"
       },
-      "SdkAnalysisLevel": "10.0.100"
+      "SdkAnalysisLevel": "10.0.400"
     },
     "frameworks": {
-      "net10.0-windows7.0": {
+      "net10.0-windows": {
+        "framework": "net10.0-windows7.0",
         "targetAlias": "net10.0-windows",
         "dependencies": {
+          "BCnEncoder.Net": {
+            "target": "Package",
+            "version": "[2.3.0, )"
+          },
           "DalamudPackager": {
             "target": "Package",
             "version": "[15.0.0, )"
@@ -133,6 +235,10 @@
             "suppressParent": "All",
             "target": "Package",
             "version": "[1.2.39, )"
+          },
+          "SixLabors.ImageSharp": {
+            "target": "Package",
+            "version": "[3.1.12, )"
           }
         },
         "imports": [
@@ -151,7 +257,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "c:\\program files\\dotnet\\sdk\\10.0.110/PortableRuntimeIdentifierGraph.json",
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.401/PortableRuntimeIdentifierGraph.json",
         "packagesToPrune": {
           "Microsoft.CSharp": "(,4.7.32767]",
           "Microsoft.VisualBasic": "(,10.4.32767]",

@@ -1,0 +1,27 @@
+{
+  "Author": "You",
+  "Name": "XIV Port Studio",
+  "InternalName": "XIVPortStudio",
+  "AssemblyVersion": "0.1.0.0",
+  "Description": "Toolkit for porting outfits from other games into FFXIV. Pick an item, then define the materials and textures it should use so the result can be exported as a Penumbra mod.",
+  "ApplicableVersion": "any",
+  "RepoUrl": "https://github.com/yourname/XIVPortStudio",
+  "Tags": [
+    "penumbra",
+    "modding",
+    "ffxiv",
+    "gear",
+    "materials",
+    "textures"
+  ],
+  "CategoryTags": [
+    "Modding"
+  ],
+  "DalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": true,
+  "LoadPriority": 0,
+  "Punchline": "Set up materials and textures for imported FFXIV gear.",
+  "AcceptsFeedback": true
+}

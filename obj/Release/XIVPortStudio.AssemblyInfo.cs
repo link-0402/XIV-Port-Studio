@@ -11,7 +11,7 @@ using System;
 using System.Reflection;
 
 [assembly: System.Reflection.AssemblyCompanyAttribute("XIVPortStudio")]
-[assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
+[assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.1.0.0")]
 [assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.0.0+72cb250b31e81ea2563decdb60e7523476d16156")]
 [assembly: System.Reflection.AssemblyProductAttribute("XIVPortStudio")]

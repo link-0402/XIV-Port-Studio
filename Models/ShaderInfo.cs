@@ -5,45 +5,49 @@ using System.Linq;
 namespace XIVPortStudio.Models;
 
 /// <summary>
-/// The shader / material types available for FFXIV materials.
-/// Each maps to the shader pack path used by the game's .mtrl files.
+/// The shader packs available for FFXIV materials, following the list TexTools
+/// exposes (its <c>EShaderPack</c> enum in xivModdingFramework).  The shader
+/// pack identifier is the filename written into a .mtrl file's shader pack
+/// field, e.g. "character.shpk".
 /// </summary>
 public enum ShaderType
 {
-    Default,
+    Character,
+    CharacterLegacy,
+    CharacterGlass,
+    CharacterStockings,
+    CharacterTattoo,
+    CharacterScroll,
+    CharacterInc,
+    CharacterOcclusion,
+    CharacterReflection,
+    CharacterTransparency,
     Skin,
     Hair,
-    Cloth,
-    Leather,
-    Metal,
-    Glass,
-    Gemstone,
-    Glow,
-    Accessory,
-    Body,
-    Water,
+    Iris,
 }
 
-/// <summary>One shader definition: display name plus the game shader pack path.</summary>
-public sealed record ShaderDef(ShaderType Type, string DisplayName, string ShaderPackPath);
+/// <summary>One shader definition: display name plus the game shader pack identifier.</summary>
+public sealed record ShaderDef(ShaderType Type, string DisplayName, string ShaderPackName);
 
 /// <summary>Static metadata about the supported shader types.</summary>
 public static class ShaderInfo
 {
     public static readonly IReadOnlyList<ShaderDef> All = new List<ShaderDef>
     {
-        new(ShaderType.Default,    "Default",                 "chara/shader/mtrl/ffxiv_character_default.mtrl"),
-        new(ShaderType.Skin,       "Skin",                    "chara/shader/mtrl/ffxiv_character_skin.mtrl"),
-        new(ShaderType.Hair,       "Hair",                    "chara/shader/mtrl/ffxiv_character_hair.mtrl"),
-        new(ShaderType.Cloth,      "Cloth",                   "chara/shader/mtrl/ffxiv_character_cloth.mtrl"),
-        new(ShaderType.Leather,    "Leather",                 "chara/shader/mtrl/ffxiv_character_leather.mtrl"),
-        new(ShaderType.Metal,      "Metal",                   "chara/shader/mtrl/ffxiv_character_metal.mtrl"),
-        new(ShaderType.Glass,      "Glass",                   "chara/shader/mtrl/ffxiv_character_glass.mtrl"),
-        new(ShaderType.Gemstone,   "Gemstone",                "chara/shader/mtrl/ffxiv_character_gem.mtrl"),
-        new(ShaderType.Glow,       "Glow / Emissive",         "chara/shader/mtrl/ffxiv_character_glow.mtrl"),
-        new(ShaderType.Accessory,  "Accessory",               "chara/shader/mtrl/ffxiv_accessory.mtrl"),
-        new(ShaderType.Body,       "Body",                    "chara/shader/mtrl/ffxiv_character_body.mtrl"),
-        new(ShaderType.Water,      "Water",                   "water/water_default.mtrl"),
+        new(ShaderType.Character,             "Character",                "character.shpk"),
+        new(ShaderType.CharacterLegacy,       "Character (Legacy)",       "characterlegacy.shpk"),
+        new(ShaderType.CharacterGlass,        "Character (Glass)",        "characterglass.shpk"),
+        new(ShaderType.CharacterStockings,    "Character (Stockings)",    "characterstockings.shpk"),
+        new(ShaderType.CharacterTattoo,       "Character (Tattoo)",       "charactertattoo.shpk"),
+        new(ShaderType.CharacterScroll,       "Character (Scroll)",       "characterscroll.shpk"),
+        new(ShaderType.CharacterInc,          "Character (Incandescence)","characterinc.shpk"),
+        new(ShaderType.CharacterOcclusion,    "Character (Occlusion)",    "characterocclusion.shpk"),
+        new(ShaderType.CharacterReflection,   "Character (Reflection)",   "characterreflection.shpk"),
+        new(ShaderType.CharacterTransparency, "Character (Transparency)", "charactertransparency.shpk"),
+        new(ShaderType.Skin,                  "Skin",                     "skin.shpk"),
+        new(ShaderType.Hair,                  "Hair",                     "hair.shpk"),
+        new(ShaderType.Iris,                  "Iris",                     "iris.shpk"),
     };
 
     /// <summary>Display names in enum order, for ImGui combo boxes.</summary>
@@ -59,32 +63,33 @@ public static class ShaderInfo
 
     public static string DisplayName(ShaderType type) => Get(type).DisplayName;
 
-    public static string ShaderPackPath(ShaderType type) => Get(type).ShaderPackPath;
+    public static string ShaderPackName(ShaderType type) => Get(type).ShaderPackName;
 }
 
-/// <summary>The role a texture plays inside a material.</summary>
+/// <summary>
+/// The role a texture plays inside a material, matching the game's texture
+/// usage types (and the _d/_n/_s/_m/_id/_r file suffixes TexTools uses).
+/// </summary>
 public enum TextureType
 {
     Diffuse,
     Normal,
     Specular,
-    Emissive,
     Mask,
-    Detail1,
-    Detail2,
+    Index,
+    Reflection,
 }
 
 public static class TextureTypeInfo
 {
     public static readonly string[] Labels =
     {
-        "Diffuse (Color)",
-        "Normal",
-        "Specular / Multiply",
-        "Emissive / Glow",
-        "Mask",
-        "Detail 1",
-        "Detail 2",
+        "Diffuse (_d)",
+        "Normal (_n)",
+        "Specular (_s)",
+        "Mask / Multiply (_m)",
+        "Color Set / Index (_id)",
+        "Reflection (_r)",
     };
 
     public static string DisplayName(TextureType type) => Labels[(int)type];

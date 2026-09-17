@@ -19,4 +19,14 @@
     <DefineConstants>DEBUG</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Exclude reference clones (e.g. TexTools/) from the SDK project globbing -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);TexTools/**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
 </Project>

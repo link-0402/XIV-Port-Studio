@@ -23,6 +23,12 @@ public class Configuration : IPluginConfiguration
     /// <summary>Material set-ups keyed by item row ID.</summary>
     public Dictionary<uint, List<MaterialSetup>> MaterialsByItem { get; set; } = new();
 
+    /// <summary>Per-race model set-ups keyed by item row ID.</summary>
+    public Dictionary<uint, List<RaceModelEntry>> ModelsByItem { get; set; } = new();
+
+    /// <summary>User-edited mod name keyed by item row ID. Falls back to an auto-generated name when absent/empty.</summary>
+    public Dictionary<uint, string> ModNameByItem { get; set; } = new();
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);
