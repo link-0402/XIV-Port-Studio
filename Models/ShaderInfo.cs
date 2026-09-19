@@ -64,6 +64,15 @@ public static class ShaderInfo
     public static string DisplayName(ShaderType type) => Get(type).DisplayName;
 
     public static string ShaderPackName(ShaderType type) => Get(type).ShaderPackName;
+
+    /// <summary>The shader type a .mtrl's shader pack name ("hair.shpk") stands for, or null if unknown.</summary>
+    public static ShaderType? FromShaderPack(string shaderPackName)
+    {
+        foreach (var def in All)
+            if (string.Equals(def.ShaderPackName, shaderPackName, StringComparison.OrdinalIgnoreCase))
+                return def.Type;
+        return null;
+    }
 }
 
 /// <summary>
@@ -84,12 +93,12 @@ public static class TextureTypeInfo
 {
     public static readonly string[] Labels =
     {
-        "Diffuse (_d)",
-        "Normal (_n)",
-        "Specular (_s)",
-        "Mask / Multiply (_m)",
-        "Color Set / Index (_id)",
-        "Reflection (_r)",
+        "Diffuse",
+        "Normal",
+        "Specular",
+        "Mask / Multiply",
+        "Color Set / Index",
+        "Reflection",
     };
 
     public static string DisplayName(TextureType type) => Labels[(int)type];

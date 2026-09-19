@@ -35,3 +35,19 @@ public class RaceModelEntry
         IsVanillaDummy = IsVanillaDummy,
     };
 }
+
+/// <summary>
+/// One material slot of the dummy model: which of the item's configured Materials
+/// (by index into the Materials list) fills it, and an optional override for the
+/// slot's on-disk material name (empty = use the assigned Material's own Name).
+/// There is always exactly one slot per configured Material; slots exist so the
+/// user can reassign/rename without reordering the Materials list itself.
+/// </summary>
+[Serializable]
+public class ModelMaterialSlot
+{
+    public int    MaterialIndex { get; set; }
+    public string NameOverride  { get; set; } = string.Empty;
+
+    public ModelMaterialSlot Clone() => new() { MaterialIndex = MaterialIndex, NameOverride = NameOverride };
+}

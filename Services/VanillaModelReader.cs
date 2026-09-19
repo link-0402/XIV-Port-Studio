@@ -14,6 +14,10 @@ public sealed class VanillaModelInfo
     public VanillaElementId[] ElementIds = Array.Empty<VanillaElementId>();
     public VanillaBoneTable[] BoneTables = Array.Empty<VanillaBoneTable>();
     public string[] BoneNames = Array.Empty<string>();
+
+    /// <summary>The material each mesh uses, as the model references it (e.g. "/mt_c0101h0005_hir_a.mtrl").</summary>
+    public string[] MaterialNames = Array.Empty<string>();
+
     public VanillaBoundingBox BoundingBoxes;
     public VanillaBoundingBox ModelBoundingBoxes;
     public VanillaBoundingBox WaterBoundingBoxes;
@@ -149,7 +153,9 @@ public static class VanillaModelReader
         br.ReadBytes(terrainShadowMeshCount * TerrainShadowMeshStructSize);
         br.ReadBytes(submeshCount * SubmeshStructSize);
         br.ReadBytes(terrainShadowSubmeshCount * TerrainShadowSubmeshStructSize);
-        br.ReadBytes(materialCount * 4); // MaterialNameOffsets — not needed.
+        var materialNameOffsets = new uint[materialCount];
+        for (int i = 0; i < materialCount; i++)
+            materialNameOffsets[i] = br.ReadUInt32();
 
         // ── BoneNameOffsets + BoneTables ─────────────────────────────────
         var boneNameOffsets = new uint[boneCount];
@@ -193,6 +199,10 @@ public static class VanillaModelReader
         for (int i = 0; i < boneCount; i++)
             boneNames[i] = ReadCString(strings, boneNameOffsets[i]);
 
+        var materialNames = new string[materialCount];
+        for (int i = 0; i < materialCount; i++)
+            materialNames[i] = ReadCString(strings, materialNameOffsets[i]);
+
         return new VanillaModelInfo
         {
             Version = version,
@@ -202,6 +212,7 @@ public static class VanillaModelReader
             ElementIds = elementIds,
             BoneTables = boneTables,
             BoneNames = boneNames,
+            MaterialNames = materialNames,
             BoundingBoxes = boundingBoxes,
             ModelBoundingBoxes = modelBoundingBoxes,
             WaterBoundingBoxes = waterBoundingBoxes,

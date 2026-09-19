@@ -28,17 +28,17 @@ public static class MaterialNaming
         return $"mt_c{BaseRaceCode}{itemPrefix}{modelId:D4}_{slotKey}_{suffix}";
     }
 
-    /// <summary>Default postfix for a texture role (game convention: d/n/s/m/id/r), before the user edits it.</summary>
+    /// <summary>Default postfix for a texture role, before the user edits it.</summary>
     public static string DefaultPostfix(TextureType type)
         => type switch
         {
-            TextureType.Diffuse    => "d",
-            TextureType.Normal     => "n",
-            TextureType.Specular   => "s",
-            TextureType.Mask       => "m",
+            TextureType.Diffuse    => "base",
+            TextureType.Normal     => "normal",
+            TextureType.Specular   => "specular",
+            TextureType.Mask       => "mask",
             TextureType.Index      => "id",
-            TextureType.Reflection => "r",
-            _                      => "o",
+            TextureType.Reflection => "reflection",
+            _                      => "other",
         };
 
     /// <summary>
@@ -54,15 +54,21 @@ public static class MaterialNaming
     public static string ItemFolder(EquipSlot slot, ushort modelId)
         => $"chara/{(SlotInfo.IsAccessory(slot) ? "accessory" : "equipment")}/{SlotInfo.ItemPrefix(slot)}{modelId:D4}";
 
-    /// <summary>Material folder, e.g. "chara/equipment/e0164/material/v0001". Materials live here — textures do not.</summary>
-    public static string MaterialFolder(EquipSlot slot, ushort modelId, int materialVariant)
-        => $"{ItemFolder(slot, modelId)}/material/v{materialVariant:D4}";
+    /// <summary>
+    /// Material folder, e.g. "chara/equipment/e0164/material/v0001". Materials live here —
+    /// textures do not. Always the v0001 slot: this tool's created mods always write there,
+    /// and pair it with an Imc override forcing every dye/recolor variant back to it (see
+    /// <see cref="GameDataService.GetImcOverridesForcingV1"/>) rather than exposing a variant
+    /// choice that would just be wrong for anyone not on that exact variant.
+    /// </summary>
+    public static string MaterialFolder(EquipSlot slot, ushort modelId)
+        => $"{ItemFolder(slot, modelId)}/material/v0001";
 
     /// <summary>
     /// Full game path of a material, e.g. "chara/equipment/e0164/material/v0001/mt_c0101e0164_top_a.mtrl".
     /// </summary>
-    public static string MaterialGamePath(EquipSlot slot, ushort modelId, int materialVariant, string materialName)
-        => $"{MaterialFolder(slot, modelId, materialVariant)}/{SanitizeFileName(materialName)}.mtrl";
+    public static string MaterialGamePath(EquipSlot slot, ushort modelId, string materialName)
+        => $"{MaterialFolder(slot, modelId)}/{SanitizeFileName(materialName)}.mtrl";
 
     /// <summary>
     /// Texture folder, e.g. "chara/equipment/e0164/texture". Flat per item — not nested under a
@@ -76,6 +82,12 @@ public static class MaterialNaming
     /// </summary>
     public static string TextureGamePath(EquipSlot slot, ushort modelId, string textureName)
         => $"{TextureFolder(slot, modelId)}/{SanitizeFileName(textureName)}.tex";
+
+    /// <summary>
+    /// Full game path of an item's IMC file, e.g. "chara/equipment/e0164/e0164.imc".
+    /// </summary>
+    public static string ImcGamePath(EquipSlot slot, ushort modelId)
+        => $"{ItemFolder(slot, modelId)}/{SlotInfo.ItemPrefix(slot)}{modelId:D4}.imc";
 
     /// <summary>
     /// Lower-cases a file name, strips an extension if present, and removes

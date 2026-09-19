@@ -16,13 +16,6 @@ public class MaterialSetup
     /// <summary>Shader / material type used by this material.</summary>
     public ShaderType ShaderType { get; set; } = ShaderType.Character;
 
-    /// <summary>
-    /// Material-variant index (1-based, matching the game's v000N material
-    /// folder convention). Multiple materials may share the same variant to
-    /// represent different texture sets for one material slot.
-    /// </summary>
-    public int MaterialVariant { get; set; } = 1;
-
     /// <summary>Textures assigned to this material, in order.</summary>
     public List<TextureSlot> Textures { get; set; } = new();
 
@@ -30,9 +23,8 @@ public class MaterialSetup
     {
         var copy = new MaterialSetup
         {
-            Name            = Name,
-            ShaderType      = ShaderType,
-            MaterialVariant = MaterialVariant,
+            Name       = Name,
+            ShaderType = ShaderType,
         };
         foreach (var t in Textures)
             copy.Textures.Add(t.Clone());
@@ -43,13 +35,12 @@ public class MaterialSetup
     /// Creates a new material from a preset, with its shader and texture slots
     /// pre-configured and named after the material (e.g. "mt_c0101e0164_top_d").
     /// </summary>
-    public static MaterialSetup FromPreset(MaterialPreset preset, string name, int materialVariant = 1)
+    public static MaterialSetup FromPreset(MaterialPreset preset, string name)
     {
         var material = new MaterialSetup
         {
-            Name            = name,
-            ShaderType      = preset.Shader,
-            MaterialVariant = materialVariant,
+            Name       = name,
+            ShaderType = preset.Shader,
         };
         foreach (var type in preset.Textures)
         {
@@ -98,15 +89,23 @@ public class TextureSlot
     public bool UseVariants { get; set; }
 
     /// <summary>
-    /// When true, this slot is filled with a generated, fully white square
-    /// texture of <see cref="WhiteDummySize"/> pixels instead of a local file
-    /// (or variant folder) — useful as a quick placeholder, e.g. for a mask
-    /// texture that should pass everything through unmodified.
+    /// When true, this slot is filled with a placeholder texture instead of a local file (or
+    /// variant folder) — a quick way to bind a slot without a source image of your own. Which
+    /// placeholder depends on the texture role: a mask can use a generated white square (sized
+    /// via <see cref="WhiteDummySize"/>) or a bundled metal texture; a normal map always uses a
+    /// bundled flat (no-bump) map, since a white square is the wrong "no bump" colour for one.
+    /// See the DummyTextureLibrary service for the available options per role.
     /// </summary>
     public bool UseWhiteDummy { get; set; }
 
-    /// <summary>Side length in pixels of the generated white dummy texture (power of two, 16–4096).</summary>
-    public int WhiteDummySize { get; set; } = 256;
+    /// <summary>
+    /// Which placeholder fills this slot when <see cref="UseWhiteDummy"/> is set. Empty selects
+    /// the role's default (the generated option, where the role has one).
+    /// </summary>
+    public string DummyPreset { get; set; } = string.Empty;
+
+    /// <summary>Side length in pixels of the generated dummy texture (power of two, 16–4096).</summary>
+    public int WhiteDummySize { get; set; } = 32;
 
     public TextureSlot Clone() => new()
     {
@@ -116,6 +115,7 @@ public class TextureSlot
         CompressBc7    = CompressBc7,
         UseVariants    = UseVariants,
         UseWhiteDummy  = UseWhiteDummy,
+        DummyPreset    = DummyPreset,
         WhiteDummySize = WhiteDummySize,
     };
 }

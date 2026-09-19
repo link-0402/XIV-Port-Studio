@@ -1,0 +1,10 @@
+# Build output
+bin/
+obj/
+
+# IDE
+.vs/
+*.user
+
+# Local reference clone (excluded from the build)
+TexTools/

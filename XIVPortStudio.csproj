@@ -3,7 +3,7 @@
 
   <PropertyGroup>
     <Version>0.1.0.0</Version>
-    <PackageProjectUrl>https://github.com/yourname/XIVPortStudio</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/link-0402/XIV-Port-Studio</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
     <Nullable>enable</Nullable>
@@ -26,7 +26,15 @@
 
   <ItemGroup>
     <PackageReference Include="BCnEncoder.Net" Version="2.3.0" />
+    <PackageReference Include="SharpGLTF.Toolkit" Version="1.0.5" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Bundled shader material presets (sourced from TexTools) — see Services/MaterialPresetLibrary.cs -->
+    <None Include="Resources\MaterialPresets\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Bundled placeholder textures — see Services/DummyTextureLibrary.cs -->
+    <None Include="Resources\DummyTextures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

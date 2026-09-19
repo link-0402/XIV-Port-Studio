@@ -32,6 +32,36 @@ public sealed class ModEqdpOverride
 }
 
 /// <summary>
+/// An Imc override: forces a single dye/recolor variant's MaterialId back to 1 (the
+/// "v0001" material folder this tool always writes to), while preserving every other
+/// field of that variant's own vanilla entry (decal, VFX, animation, attributes, sound).
+/// One of these is written per variant an item has, so the mod's material shows up
+/// regardless of which specific recolor variant the equipped item instance uses.
+/// </summary>
+public sealed class ModImcOverride
+{
+    public required EquipSlot Slot                { get; init; }
+    public required ushort    SetId                { get; init; }
+    public required byte      Variant              { get; init; }
+    public required byte      DecalId              { get; init; }
+    public required byte      VfxId                { get; init; }
+    public required byte      MaterialAnimationId  { get; init; }
+    public required ushort    AttributeMask        { get; init; }
+    public required byte      SoundId              { get; init; }
+}
+
+/// <summary>The mod's identity and descriptive fields as written into meta.json.</summary>
+public sealed class ModMetaInfo
+{
+    /// <summary>Mod identifier. Reusing it across rebuilds keeps Penumbra's settings for the mod.</summary>
+    public Guid   Identifier  { get; init; } = Guid.NewGuid();
+    public string Author      { get; init; } = "XIV Port Studio";
+    public string Description { get; init; } = string.Empty;
+    public string Version     { get; init; } = "1.0";
+    public string Website     { get; init; } = string.Empty;
+}
+
+/// <summary>
 /// Writes the Penumbra <c>meta.json</c> (FileVersion 4, as of Penumbra 1.7+) for a
 /// created mod: default files plus single-select groups that switch between texture
 /// variants. The layout mirrors what Penumbra's ModSerialization/GroupSerialization
@@ -49,30 +79,34 @@ public static class ModMetaWriter
     public static void Write(string modPath, string modName,
         IReadOnlyList<KeyValuePair<string, string>> defaultFiles,
         IReadOnlyList<ModVariantGroup> groups,
-        IReadOnlyList<ModEqdpOverride>? eqdpOverrides = null)
+        IReadOnlyList<ModEqdpOverride>? eqdpOverrides = null,
+        IReadOnlyList<ModImcOverride>? imcOverrides = null,
+        ModMetaInfo? info = null)
     {
         eqdpOverrides ??= Array.Empty<ModEqdpOverride>();
+        imcOverrides  ??= Array.Empty<ModImcOverride>();
+        info          ??= new ModMetaInfo();
 
         using var stream = File.Create(Path.Combine(modPath, "meta.json"));
         using var j = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
 
         j.WriteStartObject();
         j.WriteNumber("FileVersion", 4);
-        j.WriteString("Identifier", Guid.NewGuid());
+        j.WriteString("Identifier", info.Identifier);
         j.WriteString("LastWrite", DateTime.UtcNow);
         j.WriteString("Name", modName);
-        j.WriteString("Author", "XIV Port Studio");
-        j.WriteString("Description", $"Port of {modName}");
-        j.WriteString("Version", "1.0");
-        j.WriteString("Website", "");
+        j.WriteString("Author", info.Author);
+        j.WriteString("Description", string.IsNullOrWhiteSpace(info.Description) ? $"Port of {modName}" : info.Description);
+        j.WriteString("Version", info.Version);
+        j.WriteString("Website", info.Website);
 
-        if (defaultFiles.Count > 0 || eqdpOverrides.Count > 0)
+        if (defaultFiles.Count > 0 || eqdpOverrides.Count > 0 || imcOverrides.Count > 0)
         {
             j.WriteStartObject("DefaultData");
             if (defaultFiles.Count > 0)
                 WriteFiles(j, defaultFiles);
-            if (eqdpOverrides.Count > 0)
-                WriteEqdpManipulations(j, eqdpOverrides);
+            if (eqdpOverrides.Count > 0 || imcOverrides.Count > 0)
+                WriteManipulations(j, eqdpOverrides, imcOverrides);
             j.WriteEndObject();
         }
 
@@ -80,18 +114,19 @@ public static class ModMetaWriter
         {
             j.WriteStartArray("Groups");
             foreach (var group in groups)
-                WriteGroup(j, group);
+                WriteGroup(j, group, info.Identifier);
             j.WriteEndArray();
         }
 
         j.WriteEndObject();
     }
 
-    private static void WriteGroup(Utf8JsonWriter j, ModVariantGroup group)
+    private static void WriteGroup(Utf8JsonWriter j, ModVariantGroup group, Guid modId)
     {
+        var groupId = DerivedId(modId, group.GamePath);
         j.WriteStartObject();
         j.WriteString("Type", "Single");
-        j.WriteString("Id", Guid.NewGuid().ToString());
+        j.WriteString("Id", groupId.ToString());
         j.WriteString("Name", group.Name);
         j.WriteString("Description", "");
         j.WriteNumber("Priority", 0);
@@ -102,7 +137,7 @@ public static class ModMetaWriter
         for (int i = 0; i < group.Options.Count; i++)
         {
             j.WriteStartObject();
-            j.WriteString("Id", Guid.NewGuid().ToString());
+            j.WriteString("Id", DerivedId(groupId, group.Options[i].FilePath).ToString());
             j.WriteString("Name", group.Options[i].OptionName);
             j.WriteString("Description", "");
             j.WriteStartObject("Files");
@@ -113,6 +148,17 @@ public static class ModMetaWriter
         j.WriteEndArray();
 
         j.WriteEndObject();
+    }
+
+    /// <summary>
+    /// A stable id for a child of <paramref name="parent"/>, so a rebuilt mod gives the same
+    /// group and option the same id and Penumbra keeps the user's chosen option.
+    /// </summary>
+    private static Guid DerivedId(Guid parent, string key)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes($"{parent:N}/{key}");
+        var hash  = System.Security.Cryptography.SHA256.HashData(bytes);
+        return new Guid(hash.AsSpan(0, 16));
     }
 
     private static void WriteFiles(Utf8JsonWriter j, IReadOnlyList<KeyValuePair<string, string>> files)
@@ -143,10 +189,12 @@ public static class ModMetaWriter
         _                   => throw new ArgumentOutOfRangeException(nameof(slot)),
     };
 
-    private static void WriteEqdpManipulations(Utf8JsonWriter j, IReadOnlyList<ModEqdpOverride> overrides)
+    private static void WriteManipulations(Utf8JsonWriter j, IReadOnlyList<ModEqdpOverride> eqdpOverrides,
+        IReadOnlyList<ModImcOverride> imcOverrides)
     {
         j.WriteStartArray("Manipulations");
-        foreach (var o in overrides)
+
+        foreach (var o in eqdpOverrides)
         {
             // Grant this race/gender its own Model for the slot, without claiming a
             // unique Material — texture lookups keep falling back to the shared
@@ -164,6 +212,30 @@ public static class ModMetaWriter
             j.WriteEndObject();
             j.WriteEndObject();
         }
+
+        foreach (var o in imcOverrides)
+        {
+            j.WriteStartObject();
+            j.WriteString("Type", "Imc");
+            j.WriteStartObject("Manipulation");
+            j.WriteNumber("PrimaryId", o.SetId);
+            j.WriteNumber("SecondaryId", 0);
+            j.WriteNumber("Variant", o.Variant);
+            j.WriteString("ObjectType", SlotInfo.IsAccessory(o.Slot) ? "Accessory" : "Equipment");
+            j.WriteString("EquipSlot", SlotInfo.LabelMap[o.Slot]);
+            j.WriteString("BodySlot", "Unknown");
+            j.WriteStartObject("Entry");
+            j.WriteNumber("MaterialId", 1); // always force the v0001 folder this tool writes to
+            j.WriteNumber("DecalId", o.DecalId);
+            j.WriteNumber("VfxId", o.VfxId);
+            j.WriteNumber("MaterialAnimationId", o.MaterialAnimationId);
+            j.WriteNumber("AttributeMask", o.AttributeMask);
+            j.WriteNumber("SoundId", o.SoundId);
+            j.WriteEndObject();
+            j.WriteEndObject();
+            j.WriteEndObject();
+        }
+
         j.WriteEndArray();
     }
 }
