@@ -2,6 +2,7 @@ using Dalamud.Configuration;
 using Dalamud.Plugin;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using XIVPortStudio.Models;
 
 namespace XIVPortStudio;
@@ -38,23 +39,29 @@ public class Configuration : IPluginConfiguration
     /// <summary>Dummy-model material slot assignments keyed by item row ID.</summary>
     public Dictionary<uint, List<ModelMaterialSlot>> ModelMaterialSlotsByItem { get; set; } = new();
 
-    /// <summary>User-edited mod name keyed by item row ID. Falls back to an auto-generated name when absent/empty.</summary>
-    public Dictionary<uint, string> ModNameByItem { get; set; } = new();
+    /// <summary>Penumbra metadata overrides (EQP, EST) keyed by item row ID.</summary>
+    public Dictionary<uint, ItemMeta> MetaByItem { get; set; } = new();
+
+    /// <summary>Subject keys included in the modpack currently being built, in display/build order.</summary>
+    public List<uint> ModpackItems { get; set; } = new();
+
+    // ── Mod metadata written into meta.json (pack-level: one build makes one mod) ────
+
+    /// <summary>User-edited mod name for the whole pack. Falls back to an auto-generated name when empty.</summary>
+    public string ModName { get; set; } = string.Empty;
+
+    /// <summary>Description of the whole pack; empty falls back to "Port of {mod name}".</summary>
+    public string ModDescription { get; set; } = string.Empty;
 
     /// <summary>
-    /// Penumbra mod identifier per item, so rebuilding an item's mod keeps the same
-    /// identity (and group/option ids) instead of minting new ones every time.
+    /// Penumbra mod identifier for the pack, so rebuilding keeps the same identity
+    /// (and group/option ids) instead of minting new ones every time.
     /// </summary>
-    public Dictionary<uint, Guid> ModIdByItem { get; set; } = new();
-
-    // ── Mod metadata written into meta.json ──────────────────────────────────
+    public Guid? ModId { get; set; }
 
     public string ModAuthor { get; set; } = "XIV Port Studio";
     public string ModVersion { get; set; } = "1.0";
     public string ModWebsite { get; set; } = string.Empty;
-
-    /// <summary>Description per item; empty falls back to "Port of {mod name}".</summary>
-    public Dictionary<uint, string> ModDescriptionByItem { get; set; } = new();
 
     // ── Main window layout ───────────────────────────────────────────────────
 
@@ -64,13 +71,36 @@ public class Configuration : IPluginConfiguration
     /// <summary>Width of the inspector pane, at 100% UI scale.</summary>
     public float InspectorWidth { get; set; } = 460;
 
-    /// <summary>Stage tab last shown (index into the stage list).</summary>
+    /// <summary>Stage tab last shown, from before Models and Materials were merged (0–3). Only read when <see cref="LastTab"/> is unset.</summary>
     public int LastStage { get; set; }
+
+    /// <summary>Stage tab last shown before Browse became a tab of its own; only read when <see cref="LastTabV2"/> is unset.</summary>
+    public int LastTab { get; set; } = -1;
+
+    /// <summary>Stage tab last shown (Browse, Details, Mod Info, Build); -1 until first saved.</summary>
+    public int LastTabV2 { get; set; } = -1;
+
+    /// <summary>Height of the metadata section under the Details tree, at 100% UI scale.</summary>
+    public float MetaPaneHeight { get; set; } = 220;
 
     // ── Defaults for new content ─────────────────────────────────────────────
 
-    /// <summary>Whether newly added texture slots start with BC7 compression on.</summary>
+    /// <summary>Whether newly added texture slots start with BC7 compression on. Read only until <see cref="DefaultCompression"/> is set.</summary>
     public bool DefaultCompressBc7 { get; set; }
+
+    /// <summary>What a newly added texture slot is compressed to, or null while it still follows <see cref="DefaultCompressBc7"/>.</summary>
+    public TextureCompression? DefaultCompressionMode { get; set; }
+
+    /// <summary>The compression new texture slots start on.</summary>
+    public TextureCompression DefaultCompression
+    {
+        get => DefaultCompressionMode ?? (DefaultCompressBc7 ? TextureCompression.Bc7 : TextureCompression.None);
+        set
+        {
+            DefaultCompressionMode = value;
+            DefaultCompressBc7     = value == TextureCompression.Bc7;
+        }
+    }
 
     /// <summary>Whether texture thumbnails are shown in the material inspector.</summary>
     public bool ShowThumbnails { get; set; } = true;
@@ -85,4 +115,9 @@ public class Configuration : IPluginConfiguration
     {
         Plugin.PluginInterface.SavePluginConfig(this);
     }
+
+    /// <summary>Whether an item has any saved models or materials, regardless of modpack membership.</summary>
+    public bool HasWork(uint key)
+        => (MaterialsByItem.TryGetValue(key, out var m) && m.Count > 0)
+        || (ModelsByItem.TryGetValue(key, out var r) && r.Any(x => !string.IsNullOrWhiteSpace(x.SourcePath)));
 }

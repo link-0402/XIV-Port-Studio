@@ -1,3 +1,4 @@
+using System.Linq;
 using XIVPortStudio.Models;
 
 namespace XIVPortStudio.Services;
@@ -21,21 +22,19 @@ internal sealed class BuildController
     /// <summary>The build in progress, or null.</summary>
     public BuildJob? Running { get; private set; }
 
-    /// <summary>The most recent finished build, and the subject key it was built from.</summary>
+    /// <summary>The most recent finished build — one mod made from every item that was in the pack.</summary>
     public BuildReport? LastReport { get; private set; }
-    public uint LastReportItem { get; private set; }
 
     public bool IsRunning => Running != null;
 
     /// <summary>Whether a build can start now, and if not, why.</summary>
     public bool CanBuild(out string reason)
     {
-        if (Running != null)            { reason = "A build is already running.";                         return false; }
-        if (_session.Subject == null)   { reason = "Select an item or character feature first.";           return false; }
-        if (_session.Models.Count == 0 && _session.Materials.Count == 0)
-                                        { reason = "Add a race model or a material first.";               return false; }
-        if (!_plugin.PenumbraIpc.IsAvailable)
-                                        { reason = "Penumbra is not available — cannot resolve the mod directory."; return false; }
+        var items = _session.Items;
+        if (Running != null)                     { reason = "A build is already running.";                             return false; }
+        if (items.Count == 0)                    { reason = "Add at least one item to the modpack first.";              return false; }
+        if (!items.Any(i => i.HasWork))          { reason = "Add a race model or a material to at least one item.";     return false; }
+        if (!_plugin.PenumbraIpc.IsAvailable)    { reason = "Penumbra is not available — cannot resolve the mod directory."; return false; }
         reason = string.Empty;
         return true;
     }
@@ -55,10 +54,9 @@ internal sealed class BuildController
             return;
         }
 
-        var request = _session.CreateBuildRequest(modRoot);
-        if (request == null) return;
-
+        // Save first, so a crash mid-build cannot lose the edits being built.
         _session.Flush();
+        var request = _session.CreateBuildRequest(modRoot);
         Running = new BuildJob(request);
         _session.GoToStage(StageId.Build);
     }
@@ -80,7 +78,13 @@ internal sealed class BuildController
         }
         else
         {
-            report = new BuildReport { ModName = job.Request.ModName, ModPath = job.Request.ModRoot, ItemName = job.Request.Subject.DisplayName };
+            var itemsSummary = job.Request.Items.Count switch
+            {
+                0 => "(no items)",
+                1 => job.Request.Items[0].Subject.DisplayName,
+                _ => $"{job.Request.Items.Count} items",
+            };
+            report = new BuildReport { ModName = job.Request.ModName, ModPath = job.Request.ModRoot, ItemsSummary = itemsSummary };
             report.FatalError = job.Task.Exception?.GetBaseException().Message ?? "unknown error";
         }
 
@@ -89,8 +93,7 @@ internal sealed class BuildController
         if (report.FatalError == null && !report.Cancelled)
             report.AddModResult = _plugin.PenumbraIpc.AddMod(report.ModName);
 
-        LastReport     = report;
-        LastReportItem = job.Request.Subject.Key;
+        LastReport = report;
 
         _session.Notify(report.Summary(), report.Succeeded ? Severity.Info : report.Failed > 0 || report.FatalError != null
             ? Severity.Error

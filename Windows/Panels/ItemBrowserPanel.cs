@@ -12,9 +12,10 @@ using XIVPortStudio.Windows.UI;
 namespace XIVPortStudio.Windows.Panels;
 
 /// <summary>
-/// The left pane: choose what the port replaces. Gear is picked by slot and item name;
-/// character features (hair, face, tail, ears) by race and id. Everything configured in
-/// the other stages is attached to the subject picked here.
+/// The left pane: browse the game's items and features and add them to the modpack with
+/// the + button or by dragging a row onto the modpack list on the left.
+/// Gear is browsed by slot and item name; character features (hair, face, tail, ears) by
+/// race and id.
 ///
 /// Lists draw only the rows in view (a slot can hold thousands of items), and the
 /// search waits for typing to pause before re-filtering.
@@ -76,7 +77,7 @@ internal sealed class ItemBrowserPanel
         if (!_loaded)
             FirstLoad();
 
-        Ui.SectionHeader("Replace", "What your port replaces. Everything you set up is saved per item or feature.");
+        Ui.SectionHeader("Browse the game", "Press + on gear or a feature, or drag it onto the modpack list on the left, to add it. Set-ups are saved per item, so removing and re-adding one keeps its work.");
         DrawKindSwitch();
         ImGui.Spacing();
 
@@ -87,7 +88,8 @@ internal sealed class ItemBrowserPanel
         DrawSearchRow();
         ImGui.Spacing();
 
-        float footerH = ImGui.GetTextLineHeightWithSpacing() * 2 + ImGui.GetStyle().ItemSpacing.Y * 2;
+        float footerH = ImGui.GetTextLineHeightWithSpacing() + ImGui.GetStyle().ItemSpacing.Y;
+
         if (ImGui.BeginChild("##SubjectList", new Vector2(-1, -footerH), true))
         {
             if (_kind == SubjectKind.Gear) DrawGearList();
@@ -98,8 +100,19 @@ internal sealed class ItemBrowserPanel
         int shown = _kind == SubjectKind.Gear ? _filtered.Count : _featureIds.Count;
         int total = _kind == SubjectKind.Gear ? _allItems.Count : AllIdsForRace().Count;
         Ui.Hint(shown == total ? $"{total} {Noun(total)}" : $"{shown} of {total} {Noun(total)}");
-        DrawSelectionSummary();
+        ImGui.SameLine();
+        var inPack = $"{_session.Items.Count} in pack";
+        Ui.AlignRight(ImGui.CalcTextSize(inPack).X);
+        ImGui.TextColored(Theme.Accent, inPack);
     }
+
+    private uint SelectedKey => _session.CurrentItem?.Key ?? 0;
+
+    /// <summary>The row last clicked in this browser (highlighted even if it is not in the pack).</summary>
+    private uint _picked;
+
+    /// <summary>The subject of the last clicked row, for the Browse stage's inspector.</summary>
+    public PortSubject? Highlighted { get; private set; }
 
     private string Noun(int n) => _kind == SubjectKind.Gear ? "items" : $"{FeatureNaming.KindLabel(_kind).ToLowerInvariant()} ids";
 
@@ -187,7 +200,7 @@ internal sealed class ItemBrowserPanel
             SaveBrowserState();
         }
         Ui.Tooltip(_kind == SubjectKind.Hair
-            ? "Race the hairstyle is opened for. More races can be added on the Models stage."
+            ? "Race the hairstyle is opened for. More races can be added on the Details stage."
             : "Race and gender this feature belongs to.");
         return true;
     }
@@ -232,12 +245,12 @@ internal sealed class ItemBrowserPanel
         }
 
         var cfg = _plugin.Configuration;
-        int selected = _scrollToSelection ? _filtered.FindIndex(i => i.RowId == _session.SubjectKey) : -1;
+        int selected = _scrollToSelection ? _filtered.FindIndex(i => i.RowId == SelectedKey) : -1;
         DrawVirtualRows(_filtered.Count, selected, i =>
         {
             var item = _filtered[i];
-            DrawRow(item.RowId, item.Name, item.ModelIdDisplay, HasWork(cfg, item.RowId),
-                () => _session.SelectSubject(new GearSubject(item)),
+            DrawRow(item.RowId, item.Name, item.ModelIdDisplay, cfg.HasWork(item.RowId),
+                () => new GearSubject(item),
                 $"{item.Name}\nModel {item.ModelIdDisplay}");
         });
     }
@@ -257,13 +270,13 @@ internal sealed class ItemBrowserPanel
         var label = FeatureNaming.KindLabel(_kind);
         int selected = -1;
         if (_scrollToSelection)
-            selected = _featureIds.FindIndex(id => new FeatureSubject(_kind, race.Value, id).Key == _session.SubjectKey);
+            selected = _featureIds.FindIndex(id => new FeatureSubject(_kind, race.Value, id).Key == SelectedKey);
 
         DrawVirtualRows(_featureIds.Count, selected, i =>
         {
             var subject = new FeatureSubject(_kind, race.Value, _featureIds[i]);
-            DrawRow(subject.Key, $"{label} {subject.Id}", subject.IdDisplay, HasWork(cfg, subject.Key),
-                () => _session.SelectSubject(subject),
+            DrawRow(subject.Key, $"{label} {subject.Id}", subject.IdDisplay, cfg.HasWork(subject.Key),
+                () => subject,
                 $"{subject.DisplayName}\n{subject.ModelGamePath(race.Value)}");
         });
     }
@@ -295,41 +308,60 @@ internal sealed class ItemBrowserPanel
         ImGui.Dummy(Vector2.Zero);
     }
 
-    private void DrawRow(uint key, string name, string id, bool configured, Action select, string tooltip)
+    /// <summary>
+    /// One browser row. Clicking only highlights it (or, for something already in the pack, shows
+    /// it on the Details stage); adding takes the + button or a drag onto the modpack list, so a stray
+    /// click never changes the modpack.
+    /// </summary>
+    private void DrawRow(uint key, string name, string id, bool configured, Func<PortSubject> subject, string tooltip)
     {
-        bool sel = key == _session.SubjectKey;
+        bool inPack = _session.IsInModpack(key);
+        bool sel = key == _picked || key == SelectedKey;
+
+        // The add button is squeezed to one text line, so every row stays exactly one line tall
+        // (the list is virtualised on that assumption).
+        ImGui.PushFont(UiBuilder.IconFont);
+        var glyph = (inPack ? FontAwesomeIcon.Check : FontAwesomeIcon.Plus).ToIconString();
+        float addW = ImGui.CalcTextSize(FontAwesomeIcon.Plus.ToIconString()).X + Theme.S(10);
+        ImGui.PopFont();
+
+        float idW  = ImGui.CalcTextSize(id).X;
+        float spacing = ImGui.GetStyle().ItemSpacing.X;
+        float rowW = ImGui.GetContentRegionAvail().X - idW - addW - spacing * 2;
+
         if (configured) ImGui.PushStyleColor(ImGuiCol.Text, Theme.Accent);
-        if (ImGui.Selectable($"{(configured ? "● " : "   ")}{name}##k{key}", sel))
-            select();
-        if (configured) ImGui.PopStyleColor();
-
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(configured ? $"{tooltip}\n\nYou have a set-up saved for this." : tooltip);
-
-        ImGui.SameLine(ImGui.GetContentRegionMax().X - ImGui.CalcTextSize(id).X);
-        ImGui.TextColored(Theme.Faint, id);
-    }
-
-    private void DrawSelectionSummary()
-    {
-        var subject = _session.Subject;
-        if (subject == null)
+        if (ImGui.Selectable($"{(configured ? "● " : "   ")}{name}##k{key}", sel, ImGuiSelectableFlags.None, new Vector2(rowW, 0)))
         {
-            Ui.Hint("Nothing selected.");
-            return;
+            _picked = key;
+            Highlighted = subject();
         }
+        if (configured) ImGui.PopStyleColor();
+        SubjectDrop.Source(subject(), inPack);
 
-        Ui.Icon(subject.Kind == SubjectKind.Gear ? FontAwesomeIcon.Tshirt : FontAwesomeIcon.User, Theme.Accent);
+        if (ImGui.IsItemHovered() && !ImGui.IsMouseDragging(ImGuiMouseButton.Left))
+            ImGui.SetTooltip((configured ? $"{tooltip}\n\nYou have a set-up saved for this." : tooltip)
+                + (inPack ? "\n\nAlready in the modpack." : "\n\nAdd it with + or by dragging it onto the modpack list on the left."));
+
         ImGui.SameLine();
-        ImGui.TextUnformatted(subject.DisplayName);
-        Ui.Tooltip(subject is GearSubject gear
-            ? $"{SlotInfo.DisplayLabelMap[gear.Item.Slot]} · model {gear.Item.ModelIdDisplay}"
-            : subject.IdDisplay);
-    }
+        ImGui.TextColored(Theme.Faint, id);
 
-    private static bool HasWork(Configuration cfg, uint key)
-        => (cfg.MaterialsByItem.TryGetValue(key, out var m) && m.Count > 0)
-        || (cfg.ModelsByItem.TryGetValue(key, out var r) && r.Any(x => !string.IsNullOrWhiteSpace(x.SourcePath)));
+        ImGui.SameLine();
+        ImGui.PushFont(UiBuilder.IconFont);
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(0, 0));
+        ImGui.PushStyleColor(ImGuiCol.Button, inPack ? Vector4.Zero : Theme.Accent with { W = 0.25f });
+        ImGui.PushStyleColor(ImGuiCol.Text, inPack ? Theme.Good : Theme.Accent);
+        bool clicked = ImGui.Button($"{glyph}##add{key}", new Vector2(addW, ImGui.GetTextLineHeight()));
+        ImGui.PopStyleColor(2);
+        ImGui.PopStyleVar();
+        ImGui.PopFont();
+        if (clicked)
+        {
+            _picked = key;
+            Highlighted = subject();
+            _session.AddItem(Highlighted);   // opens it on the Details stage
+        }
+        Ui.Tooltip(inPack ? "In this modpack — click to open its set-up" : "Add to this modpack");
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Loading / filtering
@@ -354,11 +386,7 @@ internal sealed class ItemBrowserPanel
         }
 
         Reload();
-        if (subject != null)
-        {
-            _session.SelectSubject(subject);
-            _scrollToSelection = true;
-        }
+        _scrollToSelection = subject != null;
     }
 
     private void Reload()
@@ -393,7 +421,7 @@ internal sealed class ItemBrowserPanel
             var race = CurrentRace();
             IEnumerable<ushort> ids = AllIdsForRace();
             if (race != null && _configuredOnly)
-                ids = ids.Where(id => HasWork(cfg, new FeatureSubject(_kind, race.Value, id).Key));
+                ids = ids.Where(id => cfg.HasWork(new FeatureSubject(_kind, race.Value, id).Key));
             if (q.Length > 0)
                 ids = ids.Where(id => id.ToString().Contains(q, StringComparison.Ordinal) || id.ToString("D4").Contains(q, StringComparison.Ordinal));
             _featureIds = ids.ToList();
@@ -402,7 +430,7 @@ internal sealed class ItemBrowserPanel
 
         IEnumerable<GameDataService.GameItem> source = _allItems;
         if (_configuredOnly)
-            source = source.Where(i => HasWork(cfg, i.RowId));
+            source = source.Where(i => cfg.HasWork(i.RowId));
 
         if (q.Length == 0)
         {

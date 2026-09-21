@@ -14,15 +14,23 @@ public sealed record MaterialPreset(string Name, ShaderType Shader, IReadOnlyLis
 /// <summary>Static list of pre-made material presets.</summary>
 public static class MaterialPresets
 {
+    /// <remarks>
+    /// Texture sets follow the TexTools preset materials bundled under Resources/MaterialPresets
+    /// (each preset's .mtrl lists exactly these textures). Since 7.0 the specular map is folded
+    /// into the mask everywhere except the legacy shader's "Diffuse + Specular" layout.
+    /// </remarks>
     public static readonly IReadOnlyList<MaterialPreset> All = new List<MaterialPreset>
     {
-        new("Gear",               ShaderType.Character,             new[] { TextureType.Normal, TextureType.Mask, TextureType.Index }),
-        new("Gear with Diffuse",        ShaderType.Character,             new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Specular, TextureType.Mask, TextureType.Index }),
-        new("Gear Legacy",             ShaderType.CharacterLegacy,       new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Specular, TextureType.Mask, TextureType.Index }),
-        new("Scroll",             ShaderType.CharacterScroll,       new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Specular, TextureType.Mask, TextureType.Index }),
-        new("Skin",               ShaderType.Skin,                  new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Specular, TextureType.Mask }),
-        new("Hair",               ShaderType.Hair,                  new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Specular, TextureType.Mask, TextureType.Index }),
-        new("Iris",               ShaderType.Iris,                  new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Specular }),
+        new("Gear",                                ShaderType.Character,       new[] { TextureType.Normal, TextureType.Mask, TextureType.Index }),
+        new("Gear with Diffuse",                   ShaderType.Character,       new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Mask, TextureType.Index }),
+        new("Gear Legacy (Diffuse + Mask)",        ShaderType.CharacterLegacy, new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Mask, TextureType.Index }),
+        new("Gear Legacy (Diffuse + Specular)",    ShaderType.CharacterLegacy, new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Specular, TextureType.Index }),
+        new("Glass",                               ShaderType.CharacterGlass,  new[] { TextureType.Normal, TextureType.Mask, TextureType.Index }),
+        new("Scroll",                              ShaderType.CharacterScroll, new[] { TextureType.Normal, TextureType.Mask, TextureType.Index }),
+        new("Skin",                                ShaderType.Skin,            new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Mask }),
+        new("Hair",                                ShaderType.Hair,            new[] { TextureType.Normal, TextureType.Mask }),
+        new("Iris",                                ShaderType.Iris,            new[] { TextureType.Diffuse, TextureType.Normal, TextureType.Mask }),
+        new("Face Tattoo",                         ShaderType.CharacterTattoo, new[] { TextureType.Normal }),
     };
 
     /// <summary>Preset names in list order, for ImGui combo boxes.</summary>

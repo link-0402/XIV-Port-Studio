@@ -81,6 +81,12 @@ public static class RaceInfo
             { (PlayerRace.Viera,      PlayerGender.Female), "1801" },
         };
 
+    /// <summary>
+    /// The race a gender's shared files belong to. Midlander is what everything falls back to, so
+    /// gear materials are named after its codes: c0101 for male, c0201 for female.
+    /// </summary>
+    public static RaceGender BaseFor(PlayerGender gender) => new(PlayerRace.Midlander, gender);
+
     /// <summary>All 16 playable race/gender combinations, in ascending race-code order (0101, 0201, 0301, …).</summary>
     public static readonly IReadOnlyList<RaceGender> AllRaces = new List<RaceGender>
     {

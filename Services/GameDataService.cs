@@ -245,6 +245,23 @@ public sealed class GameDataService
     /// </summary>
     internal (string GamePath, MtrlInfo Material)? FindVanillaMaterial(PortSubject subject, string materialName, RaceGender? race)
     {
+        // Memoised: the validator asks every few seconds, and vanilla files never change. Callers
+        // must not edit the returned material (the patcher works on a clone).
+        var key = $"{subject.Key}|{materialName}|{race?.RaceCode}";
+        lock (_vanillaMaterials)
+            if (_vanillaMaterials.TryGetValue(key, out var cached))
+                return cached;
+
+        var found = FindVanillaMaterialUncached(subject, materialName, race);
+        lock (_vanillaMaterials)
+            _vanillaMaterials[key] = found;
+        return found;
+    }
+
+    private readonly Dictionary<string, (string GamePath, MtrlInfo Material)?> _vanillaMaterials = new();
+
+    private (string GamePath, MtrlInfo Material)? FindVanillaMaterialUncached(PortSubject subject, string materialName, RaceGender? race)
+    {
         var exact = TryReadMaterial(subject.MaterialGamePath(subject.MaterialNameFor(materialName, race), race));
         if (exact != null)
             return exact;
@@ -284,12 +301,8 @@ public sealed class GameDataService
             {
                 var info = mtrl.Value.Material;
                 setup.ShaderType = ShaderInfo.FromShaderPack(info.ShaderPackageName) ?? setup.ShaderType;
-                foreach (var tex in info.TextureOffsets)
-                {
-                    var type = MaterialPatcher.ClassifyBySuffix(tex.Path);
-                    if (type != null && setup.Textures.All(t => t.Type != type.Value))
-                        setup.Textures.Add(new TextureSlot { Type = type.Value, Postfix = MaterialNaming.DefaultPostfix(type.Value) });
-                }
+                foreach (var type in MaterialPatcher.TextureTypes(info))
+                    setup.Textures.Add(new TextureSlot { Type = type, Postfix = MaterialNaming.DefaultPostfix(type) });
             }
 
             result.Add(setup);
@@ -313,7 +326,7 @@ public sealed class GameDataService
         }
     }
 
-    private bool Exists(string path)
+    internal bool Exists(string path)
     {
         try { return _data.FileExists(path); }
         catch (Exception ex)
@@ -324,6 +337,142 @@ public sealed class GameDataService
     }
 
     /// <summary>Reads the raw, unmodified bytes of a game file, or null if it doesn't exist.</summary>
+    // -- Metadata tables (EQP, EST) ------------------------------------------
+
+    private EqpReader? _eqp;
+    private bool _eqpLoaded;
+    private readonly Dictionary<(string RaceCode, bool Accessory), EqdpReader?> _eqdp = new();
+    private readonly Dictionary<(SubjectKind Kind, ushort Id, string RaceCode), RaceGender> _materialRaces = new();
+    private readonly Dictionary<string, EstReader?> _est = new();
+
+    /// <summary>The game's equipment parameters for a set id: what a piece hides or shows. 0 when unknown.</summary>
+    public ulong VanillaEqp(ushort setId)
+    {
+        lock (_est)
+        {
+            if (!_eqpLoaded)
+            {
+                _eqp = EqpReader.Load(this);
+                _eqpLoaded = true;
+            }
+        }
+        return _eqp?.Entry(setId) ?? 0;
+    }
+
+    /// <summary>
+    /// The race's own equipment deformer bits for a set id: which of its slots the game has a
+    /// material and a model of its own for. 0 when the game has no entry, which is exactly when a
+    /// port writing that race's files has to add one.
+    /// </summary>
+    public ushort VanillaEqdp(RaceGender race, bool accessory, ushort setId)
+    {
+        var key = (race.RaceCode, accessory);
+        lock (_eqdp)
+        {
+            if (!_eqdp.TryGetValue(key, out var reader))
+                _eqdp[key] = reader = EqdpReader.Load(this, race, accessory);
+            return reader?.Entry(setId) ?? 0;
+        }
+    }
+
+    /// <summary>
+    /// The race a model's materials are actually looked up under — which is not always the race
+    /// wearing them. The game swaps the race code in a material name for the one it shares that
+    /// material under: for gear the wearer's own race when its Eqdp material bit is set, otherwise
+    /// the base race of its gender; for a character feature the race its vanilla model's own
+    /// material names point at (a Miqo'te hair's materials live under c0201). Writing a material
+    /// anywhere else leaves it where the game never looks.
+    /// </summary>
+    internal RaceGender MaterialRaceFor(PortSubject subject, RaceGender modelRace)
+    {
+        if (subject is GearSubject gear)
+            return (VanillaEqdp(modelRace, SlotInfo.IsAccessory(gear.Item.Slot), gear.Item.ModelId) & EqdpInfo.Material(gear.Item.Slot)) != 0
+                ? modelRace
+                : RaceInfo.BaseFor(modelRace.Gender);
+
+        var feature = (FeatureSubject)subject;
+        var key = (feature.Kind, feature.Id, modelRace.RaceCode);
+        lock (_materialRaces)
+        {
+            if (_materialRaces.TryGetValue(key, out var cached))
+                return cached;
+        }
+
+        var race = ProbeMaterialRace(feature, modelRace);
+        lock (_materialRaces)
+            _materialRaces[key] = race;
+        return race;
+    }
+
+    /// <summary>
+    /// Reads the sharing out of the game's own files: the race's model for this id names the race it
+    /// takes its materials from, and where the game has no model for that id, the race's first
+    /// feature of the kind does — the sharing follows the race, not the id. Falls back to the base
+    /// race of the gender, which is what everything else falls back to.
+    /// </summary>
+    private RaceGender ProbeMaterialRace(FeatureSubject feature, RaceGender modelRace)
+    {
+        foreach (var id in new[] { feature.Id, (ushort)1 })
+        {
+            var probe = new FeatureSubject(feature.Kind, modelRace, id);
+            foreach (var name in GetVanillaMaterialNames(probe, modelRace))
+            {
+                if (!FeatureNaming.TryReadRaceCode(name, out var code))
+                    continue;
+                foreach (var rg in RaceInfo.AllRaces)
+                {
+                    if (rg.RaceCode == code)
+                        return rg;
+                }
+            }
+        }
+        return RaceInfo.BaseFor(modelRace.Gender);
+    }
+
+    /// <summary>
+    /// The races a port writes a copy of each material for: one per race its models resolve their
+    /// materials to (see <see cref="MaterialRaceFor"/>), so every model finds the .mtrl the game
+    /// will ask it for. With nothing set up, gear keeps the name it was given.
+    /// </summary>
+    internal IReadOnlyList<RaceGender?> MaterialRaces(PortSubject subject, IReadOnlyList<RaceModelEntry> models)
+    {
+        if (models.Count == 0)
+            return subject.BaseRace is { } baseRace
+                ? new RaceGender?[] { MaterialRaceFor(subject, baseRace) }
+                : subject.MaterialRaces(models);
+
+        return models.Select(m => (RaceGender?)MaterialRaceFor(subject, m.RaceGender))
+            .Distinct()
+            .OrderBy(r => r!.Value.RaceCode, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>The skeleton the game ships for a hair id on a race, or null when that race has no entry for it.</summary>
+    public ushort? VanillaHairSkeleton(RaceGender race, ushort hairId)
+        => Est(EstReader.HairPath)?.Entry(race.RaceCode, hairId);
+
+    private EstReader? Est(string gamePath)
+    {
+        lock (_est)
+        {
+            if (!_est.TryGetValue(gamePath, out var reader))
+                _est[gamePath] = reader = EstReader.Load(this, gamePath);
+            return reader;
+        }
+    }
+
+    /// <summary>Every hair id on a race that has a skeleton entry, with the skeleton it uses.</summary>
+    public IReadOnlyList<(ushort HairId, ushort SkeletonId)> HairSkeletonEntries(RaceGender race)
+        => Est(EstReader.HairPath)?.EntriesFor(race.RaceCode) ?? Array.Empty<(ushort, ushort)>();
+
+    /// <summary>The vanilla hair on a race that uses this skeleton, so a port can borrow its bones.</summary>
+    public ushort? HairUsingSkeleton(RaceGender race, ushort skeletonId)
+        => Est(EstReader.HairPath)?.SetUsing(race.RaceCode, skeletonId);
+
+    /// <summary>Whether a race actually has the hair skeleton an EST entry would point at.</summary>
+    public bool HasHairSkeleton(RaceGender race, ushort skeletonId)
+        => skeletonId != 0 && Exists($"chara/human/c{race.RaceCode}/skeleton/hair/h{skeletonId:D4}/skl_c{race.RaceCode}h{skeletonId:D4}.sklb");
+
     public byte[]? GetVanillaFileBytes(string gamePath)
     {
         try

@@ -12,7 +12,7 @@ using XIVPortStudio.Windows.UI;
 namespace XIVPortStudio.Windows.Panels;
 
 /// <summary>
-/// Stage 4 — build the mod. The canvas shows the running build's progress, then the
+/// Stage 3 — build the mod. The canvas shows the running build's progress, then the
 /// report: every file grouped by kind, with its outcome, and clicking a row jumps to the
 /// set-up that produced it. The inspector is the pre-flight check.
 /// </summary>
@@ -41,21 +41,20 @@ internal sealed class BuildPanel : IStagePanel
 
     public void DrawCanvas()
     {
-        var subject = _session.Subject;
-        if (subject == null)
+        if (_session.Items.Count == 0)
         {
-            Ui.Hint("Select an item or feature on the left first.");
+            Ui.Hint("Add at least one item to the modpack first — browse for one on the left and click +.");
             return;
         }
 
         Ui.SectionHeader("Build");
         var modName = PortSession.SanitizeFolderName(string.IsNullOrWhiteSpace(_session.ModName)
-            ? PortSession.DefaultModName(subject) : _session.ModName.Trim());
+            ? _session.DefaultModName() : _session.ModName.Trim());
         Ui.Label("Mod");
         ImGui.TextUnformatted(modName);
         ImGui.SameLine();
         if (ImGui.SmallButton("Edit##modname"))
-            _session.GoToStage(StageId.Item);
+            _session.GoToStage(StageId.ModInfo);
 
         var root = _plugin.PenumbraIpc.IsAvailable ? _plugin.PenumbraIpc.GetModDirectory() : null;
         Ui.Label("Folder");
@@ -65,15 +64,19 @@ internal sealed class BuildPanel : IStagePanel
             ImGui.TextColored(Theme.Muted, Path.Combine(root, modName));
 
         ImGui.Spacing();
+        Ui.Label("Items", "Every item in the modpack is written into the one mod folder above.");
+        ImGui.TextUnformatted(string.Join(", ", _session.Items.Select(i => i.Subject.DisplayName)));
+
+        ImGui.Spacing();
         DrawBuildControls();
 
         ImGui.Spacing();
         ImGui.Spacing();
 
         var report = _builds.LastReport;
-        if (report == null || _builds.LastReportItem != subject.Key)
+        if (report == null)
         {
-            Ui.HintWrapped("No build yet for this item or feature. Building converts every texture, writes the materials and models, " +
+            Ui.HintWrapped("No build yet. Building converts every texture, writes the materials and models for every item above, " +
                            "and registers the mod with Penumbra. Rebuilding overwrites the same mod folder and keeps its id, " +
                            "so Penumbra remembers your settings for it.");
             return;
@@ -177,17 +180,32 @@ internal sealed class BuildPanel : IStagePanel
         ImGui.TableSetupColumn("Details", ImGuiTableColumnFlags.WidthStretch, 1f);
         ImGui.TableHeadersRow();
 
+        uint? lastKey = null;
         BuildCategory? lastCategory = null;
         for (int i = 0; i < entries.Count; i++)
         {
             var e = entries[i];
+
+            if (lastKey != e.SubjectKey)
+            {
+                lastKey = e.SubjectKey;
+                lastCategory = null;
+                if (!string.IsNullOrEmpty(e.ItemName))
+                {
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.TableNextColumn();
+                    ImGui.TextColored(Theme.Accent, e.ItemName);
+                }
+            }
+
             if (e.Category != lastCategory)
             {
                 lastCategory = e.Category;
                 ImGui.TableNextRow();
                 ImGui.TableNextColumn();
                 ImGui.TableNextColumn();
-                ImGui.TextColored(Theme.Accent, CategoryTitle(e.Category));
+                ImGui.TextColored(Theme.Muted, CategoryTitle(e.Category));
             }
 
             ImGui.TableNextRow();
@@ -207,8 +225,13 @@ internal sealed class BuildPanel : IStagePanel
             });
 
             ImGui.TableNextColumn();
-            if (ImGui.Selectable($"{e.Label}##entry", false, ImGuiSelectableFlags.SpanAllColumns) && e.Source != null)
-                _session.Focus(e.Source.Value);
+            if (ImGui.Selectable($"{e.Label}##entry", false, ImGuiSelectableFlags.SpanAllColumns))
+            {
+                if (e.Source != null)
+                    _session.Focus(e.Source.Value);
+                else if (e.SubjectKey != 0)
+                    _session.Focus(new Target(TargetKind.Item, e.SubjectKey));
+            }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip((e.GamePath ?? e.Label) + (e.Source != null ? "\n\nClick to open its set-up." : ""));
 
@@ -230,7 +253,7 @@ internal sealed class BuildPanel : IStagePanel
     {
         BuildCategory.Model    => "Models",
         BuildCategory.Texture  => "Textures",
-        BuildCategory.Variant  => "Texture variants",
+        BuildCategory.Variant  => "Variants",
         BuildCategory.Material => "Materials",
         _                      => "Mod metadata",
     };
@@ -253,20 +276,13 @@ internal sealed class BuildPanel : IStagePanel
 
     public void DrawInspector()
     {
-        if (_session.Subject == null)
-        {
-            Ui.Hint("Nothing selected.");
-            return;
-        }
-
-        Ui.SectionHeader("Pre-flight", "Checked continuously against your set-up and the files on disk. Click a line to go to it.");
+        Ui.SectionHeader("Pre-flight", "Checked continuously against every item's set-up and the files on disk. Click a line to go to it.");
 
         int errors   = _session.Issues.Count(i => i.Severity == Severity.Error);
         int warnings = _session.Issues.Count(i => i.Severity == Severity.Warning);
         if (errors + warnings > 0)
         {
-            ImGui.TextColored(errors > 0 ? Theme.Bad : Theme.Warn,
-                $"{errors} error(s), {warnings} warning(s)");
+            ImGui.TextColored(errors > 0 ? Theme.Bad : Theme.Warn, $"{errors} error(s), {warnings} warning(s)");
             ImGui.Spacing();
         }
 
@@ -275,10 +291,15 @@ internal sealed class BuildPanel : IStagePanel
         ImGui.Spacing();
         ImGui.Spacing();
         Ui.SectionHeader("What gets built");
-        int textures = _session.Materials.Sum(m => m.Textures.Count);
-        int variants = _session.Materials.Sum(m => m.Textures.Count(t => t.UseVariants && !t.UseWhiteDummy));
-        Row(FontAwesomeIcon.Cube,    $"{_session.Models.Count} race model(s)");
-        Row(FontAwesomeIcon.Palette, $"{_session.ModelMaterialSlots.Count} material file(s) from {_session.Materials.Count} material(s)");
+        var items = _session.Items;
+        int models    = items.Sum(i => i.Models.Count);
+        int materials = items.Sum(i => i.Materials.Count);
+        int mtrls     = items.Sum(i => i.Materials.Count * i.Subject.MaterialRaces(i.Models).Count);
+        int textures  = items.Sum(i => i.Materials.Sum(m => m.Textures.Count));
+        int variants  = items.Sum(i => i.Materials.Sum(m => m.Textures.Count(t => t.UseVariants && !t.UseWhiteDummy)));
+        Row(FontAwesomeIcon.Boxes,   $"{items.Count} item(s)");
+        Row(FontAwesomeIcon.Cube,    $"{models} race model(s)");
+        Row(FontAwesomeIcon.Palette, $"{mtrls} material file(s) from {materials} material(s)");
         Row(FontAwesomeIcon.Image,   $"{textures} texture slot(s){(variants > 0 ? $", {variants} with variants" : "")}");
     }
 

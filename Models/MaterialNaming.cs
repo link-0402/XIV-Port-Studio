@@ -11,8 +11,12 @@ namespace XIVPortStudio.Models;
 /// </summary>
 public static class MaterialNaming
 {
-    /// <summary>Base race code used by gear material names (all races share one set).</summary>
-    private const string BaseRaceCode = "0101";
+    /// <summary>
+    /// The race code a gear material name carries for a gender. The game keeps one material per
+    /// gender — male under Midlander M (c0101), female under Midlander F (c0201) — and every other
+    /// race looks its material up under its gender's base unless its own Eqdp material bit is set.
+    /// </summary>
+    public static string BaseRaceCode(PlayerGender gender) => RaceInfo.BaseFor(gender).RaceCode;
 
     /// <summary>
     /// Default material name for an item, e.g. <c>mt_c0101e0164_top_a</c>.
@@ -20,12 +24,34 @@ public static class MaterialNaming
     /// game's letter-suffix convention (1 → <c>_a</c>, 2 → <c>_b</c>, …) — real
     /// game materials always carry this suffix, even the first one.
     /// </summary>
-    public static string DefaultName(EquipSlot slot, ushort modelId, int variant = 1)
+    public static string DefaultName(EquipSlot slot, ushort modelId, int variant = 1, PlayerGender gender = PlayerGender.Male)
     {
         var itemPrefix = SlotInfo.ItemPrefix(slot);   // "e" for equipment, "a" for accessories
         var slotKey    = SlotInfo.KeyMap[slot];       // e.g. "top"
         var suffix     = (char)('a' + Math.Max(variant, 1) - 1);
-        return $"mt_c{BaseRaceCode}{itemPrefix}{modelId:D4}_{slotKey}_{suffix}";
+        return $"mt_c{BaseRaceCode(gender)}{itemPrefix}{modelId:D4}_{slotKey}_{suffix}";
+    }
+
+    /// <summary>
+    /// Swaps the race code in a material name ("mt_c0101e0025_top_a" → "mt_c0201e0025_top_a"), which
+    /// is how one material set-up is written for each gender, or for each race of a feature port.
+    /// A name that carries no race code is left as it is.
+    /// </summary>
+    public static string WithRaceCode(string name, string raceCode)
+    {
+        for (int i = 0; i + 5 <= name.Length; i++)
+        {
+            if (name[i] is not ('c' or 'C'))
+                continue;
+
+            bool digits = true;
+            for (int d = 1; d <= 4 && digits; d++)
+                digits = char.IsAsciiDigit(name[i + d]);
+
+            if (digits)
+                return string.Concat(name.AsSpan(0, i + 1), raceCode, name.AsSpan(i + 5));
+        }
+        return name;
     }
 
     /// <summary>Default postfix for a texture role, before the user edits it.</summary>

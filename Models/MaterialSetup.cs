@@ -76,10 +76,24 @@ public class TextureSlot
     public string SourcePath { get; set; } = string.Empty;
 
     /// <summary>
-    /// When true, the texture is compressed to BC7 on creation; otherwise it
-    /// stays in the uncompressed RGBA (B8G8R8A8) format.
+    /// The old BC7-or-nothing flag. Still saved and loaded so set-ups made before the format was a
+    /// choice keep working; <see cref="CompressionMode"/> wins once one has been picked.
     /// </summary>
     public bool CompressBc7 { get; set; }
+
+    /// <summary>The format picked for this slot, or null while it still follows <see cref="CompressBc7"/>.</summary>
+    public TextureCompression? CompressionMode { get; set; }
+
+    /// <summary>How this texture is written: what the build compresses it to, if anything.</summary>
+    public TextureCompression Compression
+    {
+        get => CompressionMode ?? (CompressBc7 ? TextureCompression.Bc7 : TextureCompression.None);
+        set
+        {
+            CompressionMode = value;
+            CompressBc7     = value == TextureCompression.Bc7;   // keep the old flag readable
+        }
+    }
 
     /// <summary>
     /// When true, <see cref="SourcePath"/> points to a folder of image files
@@ -107,12 +121,24 @@ public class TextureSlot
     /// <summary>Side length in pixels of the generated dummy texture (power of two, 16–4096).</summary>
     public int WhiteDummySize { get; set; } = 32;
 
+    /// <summary>
+    /// When set, this slot writes no texture of its own: the material points at this game path,
+    /// which another material (usually on another model, e.g. the same hair for a second race)
+    /// already writes. Set when a material is pasted with "keep texture paths". The source fields
+    /// above are kept, so the slot can be made separate again without re-picking files.
+    /// </summary>
+    public string SharedGamePath { get; set; } = string.Empty;
+
+    public bool IsShared => !string.IsNullOrEmpty(SharedGamePath);
+
     public TextureSlot Clone() => new()
     {
+        SharedGamePath = SharedGamePath,
         Type           = Type,
         Postfix        = Postfix,
         SourcePath     = SourcePath,
-        CompressBc7    = CompressBc7,
+        CompressBc7     = CompressBc7,
+        CompressionMode = CompressionMode,
         UseVariants    = UseVariants,
         UseWhiteDummy  = UseWhiteDummy,
         DummyPreset    = DummyPreset,

@@ -79,6 +79,17 @@ public static class FeatureNaming
     }
 
     /// <summary>
+    /// The race code a feature material name carries, e.g. "0201" in "/mt_c0201h0127_hir_a.mtrl".
+    /// A vanilla model's names say which race the game shares that feature's materials under.
+    /// </summary>
+    public static bool TryReadRaceCode(string materialName, out string raceCode)
+    {
+        var match = MaterialNamePattern.Match(MaterialNaming.SanitizeFileName(materialName.TrimStart('/')));
+        raceCode = match.Success ? match.Groups[1].Value : string.Empty;
+        return match.Success;
+    }
+
+    /// <summary>
     /// Races that can have this kind at all. The browser narrows this further to races that
     /// actually ship at least one id.
     /// </summary>

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using XIVPortStudio.Models;
 using BCnEncoder.Decoder;
 using BCnEncoder.Encoder;
 using BCnEncoder.Shared;
@@ -20,8 +21,8 @@ public static class TextureConverter
     private const int TexHeaderSize = 80;
     private const int MaxMipCount   = 13;
 
-    // TexFile.Attribute
-    private const uint TextureType2D = 0x0000000D;
+    // TexFile.Attribute (bit flags; the texture-type dimension lives at bit 22-24)
+    private const uint TextureType2D = 0x00800000;
 
     // TexFile.TextureFormat
     private const uint FormatB8G8R8A8 = 0x1450;
@@ -42,6 +43,16 @@ public static class TextureConverter
     /// message on failure.
     /// </summary>
     public static bool Convert(string sourcePath, bool compressBc7, out byte[] texData, out string error)
+        => Convert(sourcePath, compressBc7 ? TextureCompression.Bc7 : TextureCompression.None, out texData, out error);
+
+    /// <summary>
+    /// Converts the image at <paramref name="sourcePath"/> into a complete .tex file (header + mip
+    /// data), in the format <paramref name="compression"/> asks for. <paramref name="progress"/> is
+    /// reported through while a block format is compressed, which is the slow part by far.
+    /// Returns false with an error message on failure.
+    /// </summary>
+    public static bool Convert(string sourcePath, TextureCompression compression, out byte[] texData, out string error,
+        IProgress<float>? progress = null)
     {
         texData = Array.Empty<byte>();
         error   = string.Empty;
@@ -65,18 +76,18 @@ public static class TextureConverter
                 case ".png":
                 case ".jpg":
                 case ".jpeg":
-                    return compressBc7
-                        ? ConvertImageToBc7(source, out texData, out error)
-                        : ConvertImageToBgra(source, out texData, out error);
+                    return compression == TextureCompression.None
+                        ? ConvertImageToBgra(source, out texData, out error)
+                        : ConvertImageToBlocks(source, compression, out texData, out error, progress);
 
                 case ".dds":
                     if (!ReadDds(source, out var info, out error))
                         return false;
-                    if (!compressBc7)
+                    if (compression == TextureCompression.None)
                         return WriteTex(info, out texData);
-                    if (info.FormatCode == FormatBC7)
-                        return WriteTex(info, out texData);      // already BC7 — passthrough
-                    return ConvertDdsToBc7(info, out texData, out error);
+                    if (info.FormatCode == TexFormatOf(compression))
+                        return WriteTex(info, out texData);      // already in that format — passthrough
+                    return ConvertDdsToBlocks(info, compression, out texData, out error, progress);
 
                 default:
                     error = $"Unsupported file type '{ext}' (use png, jpeg or dds).";
@@ -95,6 +106,13 @@ public static class TextureConverter
     /// pixels (must be a power of two between 16 and 4096) — no source file needed.
     /// </summary>
     public static bool CreateWhiteDummy(int size, bool compressBc7, out byte[] texData, out string error)
+        => CreateWhiteDummy(size, compressBc7 ? TextureCompression.Bc7 : TextureCompression.None, out texData, out error);
+
+    /// <summary>
+    /// Generates a fully white, fully opaque square .tex file of <paramref name="size"/>
+    /// pixels (must be a power of two between 16 and 4096) — no source file needed.
+    /// </summary>
+    public static bool CreateWhiteDummy(int size, TextureCompression compression, out byte[] texData, out string error)
     {
         texData = Array.Empty<byte>();
         error   = string.Empty;
@@ -108,7 +126,7 @@ public static class TextureConverter
         var bgra = new byte[size * size * 4];
         Array.Fill(bgra, (byte)255); // white + fully opaque in every channel
 
-        if (!compressBc7)
+        if (compression == TextureCompression.None)
         {
             var header = BuildHeader(size, size, FormatB8G8R8A8, mipCount: 1, out _);
             var data = new byte[TexHeaderSize + bgra.Length];
@@ -118,7 +136,7 @@ public static class TextureConverter
             return true;
         }
 
-        var dds = EncodeBc7ToDds(bgra, size, size, out error);
+        var dds = EncodeToDds(bgra, size, size, compression, out error);
         if (dds == null) return false;
         return ReadDds(dds, out var info, out error) && WriteTex(info, out texData);
     }
@@ -147,8 +165,9 @@ public static class TextureConverter
         return true;
     }
 
-    /// <summary>BC7 path: encode the image (with a generated mip chain) via BCnEncoder.</summary>
-    private static bool ConvertImageToBc7(byte[] source, out byte[] texData, out string error)
+    /// <summary>Block-compressed path: encode the image (with a generated mip chain) via BCnEncoder.</summary>
+    private static bool ConvertImageToBlocks(byte[] source, TextureCompression compression, out byte[] texData,
+        out string error, IProgress<float>? progress = null)
     {
         using var image = LoadImage(source, out error);
         if (image == null)
@@ -158,7 +177,7 @@ public static class TextureConverter
         }
 
         var bgra = ImageToBgra(image);
-        var dds = EncodeBc7ToDds(bgra, image.Width, image.Height, out error);
+        var dds = EncodeToDds(bgra, image.Width, image.Height, compression, out error, progress);
         if (dds == null)
         {
             texData = Array.Empty<byte>();
@@ -202,15 +221,20 @@ public static class TextureConverter
     // BC7 compression via BCnEncoder (in-process, no external tools)
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static byte[]? EncodeBc7ToDds(byte[] bgraPixels, int width, int height, out string error)
+    private static byte[]? EncodeToDds(byte[] bgraPixels, int width, int height, TextureCompression compression,
+        out string error, IProgress<float>? progress = null)
     {
         try
         {
+            // The encoder already spreads blocks over every core; what makes BC7 slow is the search
+            // it runs per block, which is also what makes it hold detail better than BC3.
             var encoder = new BcEncoder();
-            encoder.OutputOptions.Format          = CompressionFormat.Bc7;
+            encoder.OutputOptions.Format          = BcFormatOf(compression);
             encoder.OutputOptions.GenerateMipMaps = true;
             encoder.OutputOptions.Quality         = CompressionQuality.Balanced;
             encoder.OutputOptions.FileFormat      = OutputFileFormat.Dds;
+            if (progress != null)
+                encoder.Options.Progress = new BlockProgress(progress);
 
             using var ms = new MemoryStream();
             encoder.EncodeToStream(bgraPixels, width, height, PixelFormat.Bgra32, ms);
@@ -224,8 +248,9 @@ public static class TextureConverter
         }
     }
 
-    /// <summary>Re-compresses a non-BC7 DDS to BC7: decode mip 0 to pixels, then encode.</summary>
-    private static bool ConvertDdsToBc7(DdsInfo info, out byte[] texData, out string error)
+    /// <summary>Re-compresses a DDS into another block format: decode mip 0 to pixels, then encode.</summary>
+    private static bool ConvertDdsToBlocks(DdsInfo info, TextureCompression compression, out byte[] texData,
+        out string error, IProgress<float>? progress = null)
     {
         texData = Array.Empty<byte>();
         error   = string.Empty;
@@ -236,7 +261,7 @@ public static class TextureConverter
             var format = ToBcEncoderFormat(info.FormatCode);
             if (format == CompressionFormat.Unknown)
             {
-                error = $"Cannot recompress DDS format 0x{info.FormatCode:X4} to BC7.";
+                error = $"Cannot recompress DDS format 0x{info.FormatCode:X4}.";
                 return false;
             }
 
@@ -264,9 +289,38 @@ public static class TextureConverter
             pixels = info.MipData[0]; // uncompressed DDS already gives BGRA bytes
         }
 
-        var dds = EncodeBc7ToDds(pixels, info.Width, info.Height, out error);
+        var dds = EncodeToDds(pixels, info.Width, info.Height, compression, out error, progress);
         if (dds == null) return false;
-        return ReadDds(dds, out var bc7Info, out error) && WriteTex(bc7Info, out texData);
+        return ReadDds(dds, out var encoded, out error) && WriteTex(encoded, out texData);
+    }
+
+    private static CompressionFormat BcFormatOf(TextureCompression compression)
+        => compression == TextureCompression.Bc3 ? CompressionFormat.Bc3 : CompressionFormat.Bc7;
+
+    /// <summary>The game format code a compression choice produces, for the DDS passthrough check.</summary>
+    private static uint TexFormatOf(TextureCompression compression)
+        => compression == TextureCompression.Bc3 ? FormatBC3 : FormatBC7;
+
+    /// <summary>Turns the encoder per-block reports into a 0-1 fraction, without flooding the caller.</summary>
+    private sealed class BlockProgress : IProgress<ProgressElement>
+    {
+        private readonly IProgress<float> _target;
+        private int _lastPercent = -1;
+
+        public BlockProgress(IProgress<float> target) => _target = target;
+
+        public void Report(ProgressElement value)
+        {
+            if (value.TotalBlocks <= 0)
+                return;
+
+            int percent = (int)(100.0 * value.CurrentBlock / value.TotalBlocks);
+            if (percent == _lastPercent)
+                return;
+
+            _lastPercent = percent;
+            _target.Report(percent / 100f);
+        }
     }
 
     private static CompressionFormat ToBcEncoderFormat(uint format)
@@ -359,8 +413,9 @@ public static class TextureConverter
             }
         }
         else if (fourCC == 0x31545844) { format = FormatBC1; bytesPerBlock = 8;  }  // DXT1
-        else if (fourCC == 0x33545844) { format = FormatBC2; bytesPerBlock = 16; }  // DXT3
-        else if (fourCC == 0x34545844) { format = FormatBC3; bytesPerBlock = 16; }  // DXT5
+        else if (fourCC == 0x32545844 || fourCC == 0x33545844) { format = FormatBC2; bytesPerBlock = 16; }  // DXT2 / DXT3
+        // DXT4 and DXT5 are the same blocks; DXT4 only says the colour is premultiplied by alpha.
+        else if (fourCC == 0x34545844 || fourCC == 0x35545844) { format = FormatBC3; bytesPerBlock = 16; }  // DXT4 / DXT5
         else if (fourCC == 0x31495441 || fourCC == 0x55344342) { format = FormatBC4; bytesPerBlock = 8;  }  // ATI1 / BC4U
         else if (fourCC == 0x32495441 || fourCC == 0x55354342) { format = FormatBC5; bytesPerBlock = 16; }  // ATI2 / BC5U
         else if (fourCC == 0)
@@ -448,10 +503,7 @@ public static class TextureConverter
         w.Write((ushort)width);                 // ushort Width
         w.Write((ushort)height);                // ushort Height
         w.Write((ushort)1);                     // ushort Depth
-        w.Write((byte)mipCount);                // byte   MipCount (MipFlag 0)
-        w.Write((byte)0);                       // byte   MipFlag / unknown
-        w.Write((byte)1);                       // byte   ArraySize
-        w.Write((byte)0);                       // byte   Reserved
+        w.Write((ushort)mipCount);              // ushort MipLevels
 
         // LoD mip indices — clamped so they never point past the last mip.
         for (int i = 0; i < 3; i++)

@@ -38,7 +38,11 @@ internal abstract class PortSubject
     public abstract string MaterialFolder(RaceGender? race);
     public abstract string TextureFolder { get; }
 
-    public abstract string DefaultMaterialName(int letter);
+    /// <summary>
+    /// The name a new material starts with. Gear names follow the gender of the model the material
+    /// belongs to, since the game keeps one gear material per gender; a feature uses its own race.
+    /// </summary>
+    public abstract string DefaultMaterialName(int letter, RaceGender? race = null);
 
     /// <summary>
     /// The races a copy of each material is written for. Gear yields a single null (one
@@ -97,10 +101,26 @@ internal sealed class GearSubject : PortSubject
     public override string MaterialFolder(RaceGender? race) => MaterialNaming.MaterialFolder(Item.Slot, Item.ModelId);
     public override string TextureFolder => MaterialNaming.TextureFolder(Item.Slot, Item.ModelId);
 
-    public override string DefaultMaterialName(int letter) => MaterialNaming.DefaultName(Item.Slot, Item.ModelId, letter);
+    public override string DefaultMaterialName(int letter, RaceGender? race = null)
+        => MaterialNaming.DefaultName(Item.Slot, Item.ModelId, letter, (race ?? RaceInfo.BaseFor(PlayerGender.Male)).Gender);
 
     private static readonly IReadOnlyList<RaceGender?> Shared = new RaceGender?[] { null };
-    public override IReadOnlyList<RaceGender?> MaterialRaces(IReadOnlyList<RaceModelEntry> models) => Shared;
+
+    /// <summary>
+    /// One copy per gender the port has a model for: the game looks a gear material up under the
+    /// base race of the wearer's gender, so a female model's material is written as c0201 and a
+    /// male one's as c0101. With no models configured there is nothing to follow, so the material
+    /// keeps the name it was given.
+    /// </summary>
+    public override IReadOnlyList<RaceGender?> MaterialRaces(IReadOnlyList<RaceModelEntry> models)
+        => models.Count == 0
+            ? Shared
+            : models.Select(m => m.RaceGender.Gender).Distinct().OrderBy(g => g)
+                    .Select(g => (RaceGender?)RaceInfo.BaseFor(g)).ToList();
+
+    /// <summary>The material's name in that gender's copy — the base race code swapped in.</summary>
+    public override string MaterialNameFor(string name, RaceGender? race)
+        => race == null ? name : MaterialNaming.WithRaceCode(name, MaterialNaming.BaseRaceCode(race.Value.Gender));
 
     public override string VanillaMaterialPath(string referencedName, RaceGender race)
         => MaterialNaming.MaterialGamePath(Item.Slot, Item.ModelId, referencedName.TrimStart('/'));
@@ -142,8 +162,9 @@ internal sealed class FeatureSubject : PortSubject
 
     /// <summary>
     /// A feature material lives where its name says: "mt_c1501h0005_hir_a" goes to Hrothgar's
-    /// hair 5 folder whichever race is asking, since that is how the game resolves it. Names
-    /// that carry no race/id go to <paramref name="race"/>'s own folder.
+    /// hair 5 folder whichever race is asking, since that is how the game resolves it — and the
+    /// name carries the race the game shares this feature's materials under, not necessarily the
+    /// race wearing them. Names that carry no race/id go to <paramref name="race"/>'s own folder.
     /// </summary>
     public override string MaterialGamePath(string materialName, RaceGender? race)
         => FeatureNaming.ResolveMaterialPath(Kind, materialName, (race ?? Race).RaceCode, Id);
@@ -156,7 +177,8 @@ internal sealed class FeatureSubject : PortSubject
     /// <summary>Textures are written once, under the base race, and every race's material points at them.</summary>
     public override string TextureFolder => FeatureNaming.TextureFolder(Kind, Race.RaceCode, Id);
 
-    public override string DefaultMaterialName(int letter) => FeatureNaming.DefaultMaterialName(Kind, Race.RaceCode, Id, letter);
+    public override string DefaultMaterialName(int letter, RaceGender? race = null)
+        => FeatureNaming.DefaultMaterialName(Kind, (race ?? Race).RaceCode, Id, letter);
 
     public override IReadOnlyList<RaceGender?> MaterialRaces(IReadOnlyList<RaceModelEntry> models)
     {
@@ -165,15 +187,14 @@ internal sealed class FeatureSubject : PortSubject
         return models.Select(m => (RaceGender?)m.RaceGender).Distinct().ToList();
     }
 
+    /// <summary>
+    /// The material's name in one race's copy: its race code swapped for that race's. Each race a
+    /// feature is written for looks its materials up under one race code (often a shared one, see
+    /// <see cref="GameDataService.MaterialRaceFor"/>), and the name decides both the file name and,
+    /// through <see cref="FeatureNaming.ResolveMaterialPath"/>, the folder it lands in.
+    /// </summary>
     public override string MaterialNameFor(string name, RaceGender? race)
-    {
-        if (race == null || race.Value == Race)
-            return name;
-        var from = $"c{Race.RaceCode}";
-        var to   = $"c{race.Value.RaceCode}";
-        int at = name.IndexOf(from, System.StringComparison.OrdinalIgnoreCase);
-        return at < 0 ? name : name[..at] + to + name[(at + from.Length)..];
-    }
+        => race == null ? name : MaterialNaming.WithRaceCode(name, race.Value.RaceCode);
 
     public override string VanillaMaterialPath(string referencedName, RaceGender race)
         => FeatureNaming.ResolveMaterialPath(Kind, referencedName, race.RaceCode, Id);

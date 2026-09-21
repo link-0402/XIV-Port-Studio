@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Windowing;
+using XIVPortStudio.Models;
 using XIVPortStudio.Windows.UI;
 
 namespace XIVPortStudio.Windows;
@@ -10,6 +11,8 @@ namespace XIVPortStudio.Windows;
 /// <summary>Settings that apply across every item: defaults for new content, mod metadata, and layout.</summary>
 public sealed class ConfigWindow : Window, IDisposable
 {
+    private static readonly string[] CompressionLabels = { "None", "BC3", "BC7" };
+
     private readonly Plugin _plugin;
 
     public ConfigWindow(Plugin plugin) : base(
@@ -28,13 +31,15 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.PushItemWidth(Theme.S(280));
 
         Ui.SectionHeader("New textures");
-        bool bc7 = cfg.DefaultCompressBc7;
-        if (ImGui.Checkbox("Compress new textures to BC7", ref bc7))
+        int compression = (int)cfg.DefaultCompression;
+        if (ImGui.Combo("Compress new textures", ref compression, CompressionLabels, CompressionLabels.Length))
         {
-            cfg.DefaultCompressBc7 = bc7;
+            cfg.DefaultCompression = (TextureCompression)compression;
             changed = true;
         }
-        Ui.Tooltip("Starting value of the BC7 box on texture slots you add from now on. Existing slots keep their setting.");
+        Ui.Tooltip("What texture slots you add from now on start on; existing slots keep their setting.\n\n"
+                 + "BC7 is what the game uses itself and looks best, but a large image takes the better part of a "
+                 + "minute to compress. BC3 is around twenty times quicker. None ships the raw pixels.");
 
         bool thumbs = cfg.ShowThumbnails;
         if (ImGui.Checkbox("Show texture previews", ref thumbs))

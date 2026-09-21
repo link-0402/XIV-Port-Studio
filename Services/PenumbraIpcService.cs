@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
@@ -23,6 +24,7 @@ public sealed class PenumbraIpcService : IDisposable
     private readonly ICallGateSubscriber<string, string, (int, string, bool, bool)>      _getModPath;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>                       _getCollections;
     private readonly ICallGateSubscriber<string, int>                                    _addMod;
+    private readonly ICallGateSubscriber<string, string, int, bool, Task>                _convertTexture;
 
     // ── Events ────────────────────────────────────────────────────────────────
 
@@ -45,6 +47,7 @@ public sealed class PenumbraIpcService : IDisposable
         _getModPath      = pi.GetIpcSubscriber<string, string, (int, string, bool, bool)>("Penumbra.GetModPath.V5");
         _getCollections  = pi.GetIpcSubscriber<Dictionary<Guid, string>>         ("Penumbra.GetCollections.V5");
         _addMod          = pi.GetIpcSubscriber<string, int>                      ("Penumbra.AddMod.V5");
+        _convertTexture  = pi.GetIpcSubscriber<string, string, int, bool, Task>  ("Penumbra.ConvertTextureFile");
 
         try
         {
@@ -81,6 +84,35 @@ public sealed class PenumbraIpcService : IDisposable
                 return breaking == 5;
             }
             catch { return false; }
+        }
+    }
+
+    /// <summary>
+    /// Whether Penumbra can convert textures for us. Its converter is the one behind its own texture
+    /// editor — native DirectXTex through OtterTex — and is worth using over the managed encoder
+    /// bundled here, which is the same job in plain C# and minutes slower on a large image.
+    /// </summary>
+    public bool CanConvertTextures
+    {
+        get
+        {
+            try   { return _convertTexture.HasFunction; }
+            catch { return false; }
+        }
+    }
+
+    /// <summary>
+    /// Asks Penumbra to convert an image into a .tex, returning the task it runs it on, or null when
+    /// it cannot. <paramref name="textureType"/> is Penumbra's own TextureType (7 = BC7, 5 = BC3,
+    /// 3 = RGBA, all as .tex). Call on the framework thread.
+    /// </summary>
+    public Task? ConvertTextureFile(string inputFile, string outputFile, int textureType, bool mipMaps = true)
+    {
+        try   { return _convertTexture.InvokeFunc(inputFile, outputFile, textureType, mipMaps); }
+        catch (Exception ex)
+        {
+            _log.Debug(ex, "[XPS] Penumbra could not convert {0}", inputFile);
+            return null;
         }
     }
 

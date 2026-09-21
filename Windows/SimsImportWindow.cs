@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -17,7 +18,9 @@ namespace XIVPortStudio.Windows;
 /// Imports a Sims 4 .package: lists the meshes and textures it carries, lets the user
 /// choose which detail levels to take and untick anything unwanted, then extracts the
 /// rest into the folder layout the material editor consumes — a folder of diffuse
-/// swatches to point a variant slot at, and single files for the other roles.
+/// swatches to point a variant slot at, and single files for the other roles. Every
+/// extracted file and folder can then be dragged onto a texture or model input in the
+/// main window's Models tree.
 ///
 /// Scanning and extraction both run off the render thread. A package can run to
 /// hundreds of megabytes, and decoding its textures on the draw call would stall the
@@ -34,6 +37,12 @@ public sealed class SimsImportWindow : Window, IDisposable
 
     private SimsScanResult? _scan;
     private SimsPackageInspector.ExtractionResult? _extraction;
+
+    /// <summary>One draggable entry of the extraction result list.</summary>
+    private sealed record ResultRow(string Label, string Detail, DroppedPaths Paths, string? Preview, bool PreviewIsFolder,
+        bool IsModel, bool NeedsConversion, bool Indented);
+
+    private List<ResultRow> _results = new();
 
     /// <summary>Whether to halve textures whose used content sits in one half.</summary>
     private bool _cropHalf = true;
@@ -97,7 +106,7 @@ public sealed class SimsImportWindow : Window, IDisposable
         DrawOptions(busy);
 
         float footerH = _extraction != null
-            ? ImGui.GetFrameHeightWithSpacing() * 6
+            ? ImGui.GetFrameHeightWithSpacing() * 6 + ResultListHeight
             : ImGui.GetFrameHeightWithSpacing() * 1.5f;
         if (ImGui.BeginChild("##SimsAssets", new Vector2(-1, -footerH), true))
             DrawAssetList(busy);
@@ -391,25 +400,25 @@ public sealed class SimsImportWindow : Window, IDisposable
         }
 
         Ui.LabeledValue("Folder", _extraction.RootFolder, "Also holds extract-report.txt with the full log of this run.");
-        if (_extraction.ModelFile != null)
-        {
-            Ui.LabeledValue("Model", _extraction.ModelFile,
-                "The .glb is an intermediate, not a finished FFXIV model — open it in Blender, fit it to the target body, " +
-                "and export a .mdl before setting it as a race model in the main window.");
-        }
+
+        ImGui.Spacing();
+        Ui.Icon(FontAwesomeIcon.HandPointer, Theme.Accent);
+        ImGui.SameLine();
+        ImGui.TextColored(Theme.Accent, "Drag any row onto a texture or model input in the main window's Models tree.");
+        DrawResultList();
 
         bool canApply = _extraction.DiffuseCount > 0 || _extraction.NormalFile != null || _extraction.SpecularFile != null;
         var target = _plugin.Session.CurrentMaterial;
         using (Ui.Disabled(!canApply || target == null))
         {
-            var label = target != null ? $"Apply to \"{target.Name}\"" : "Apply to selected material";
+            var label = target != null ? $"Apply all to \"{target.Name}\"" : "Apply all to selected material";
             if (Ui.IconTextButton(FontAwesomeIcon.ArrowRight, label,
                     target == null
-                        ? "Select a material on the main window's Materials stage first."
-                        : "Points that material at these files: the diffuse folder as a variant group, and the normal / specular images as single textures."))
+                        ? "Select a material in the main window's Models tree first."
+                        : "Shortcut: points that material at these files — the diffuse folder as a variant group, and the normal / specular images as single textures."))
             {
                 _applyMessage = _plugin.MainWindow.ApplySimsExtraction(_extraction);
-                _plugin.Session.GoToStage(Models.StageId.Materials);
+                _plugin.Session.GoToStage(Models.StageId.Details);
             }
         }
 
@@ -418,6 +427,133 @@ public sealed class SimsImportWindow : Window, IDisposable
             ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
             Ui.Hint(_applyMessage);
+        }
+    }
+
+    private static float ResultListHeight => Theme.S(200);
+
+    /// <summary>
+    /// Everything the extraction wrote, one draggable row each: the diffuse folder (drops as a
+    /// variant folder) and its swatches, the other textures, and the model files.
+    /// </summary>
+    private void DrawResultList()
+    {
+        if (!ImGui.BeginTable("##SimsResults", 3, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY
+                                                 | ImGuiTableFlags.PadOuterX, new Vector2(-1, ResultListHeight)))
+            return;
+
+        float thumb = ImGui.GetFrameHeight() * 1.4f;
+        ImGui.TableSetupColumn("##thumb", ImGuiTableColumnFlags.WidthFixed, thumb);
+        ImGui.TableSetupColumn("##name",  ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("##act",   ImGuiTableColumnFlags.WidthFixed, ImGui.GetFrameHeight());
+
+        if (_results.Count == 0)
+        {
+            ImGui.TableNextRow();
+            ImGui.TableNextColumn();
+            ImGui.TableNextColumn();
+            Ui.Hint("(nothing usable was written)");
+        }
+
+        for (int i = 0; i < _results.Count; i++)
+        {
+            var row = _results[i];
+            ImGui.PushID(i);
+            ImGui.TableNextRow();
+
+            ImGui.TableNextColumn();
+            if (row.Preview != null)
+                _thumbnails.Draw(new Models.TextureSlot { SourcePath = row.Preview, UseVariants = row.PreviewIsFolder }, thumb);
+            else
+                Ui.Icon(row.IsModel ? FontAwesomeIcon.Cube : FontAwesomeIcon.File, row.NeedsConversion ? Theme.Warn : Theme.Muted);
+
+            ImGui.TableNextColumn();
+            if (row.Indented) ImGui.Indent(Theme.S(14));
+            ImGui.Selectable($"{row.Label}##row", false, ImGuiSelectableFlags.None, new Vector2(0, 0));
+            FileDrop.Source(row.Paths, row.Label);
+            if (ImGui.IsItemHovered() && !ImGui.IsMouseDragging(ImGuiMouseButton.Left))
+                ImGui.SetTooltip($"{string.Join("\n", row.Paths.Folders.Concat(row.Paths.Files))}\n\nDrag onto an input in the main window.");
+            ImGui.SameLine();
+            ImGui.TextColored(row.NeedsConversion ? Theme.Warn : Theme.Faint, row.Detail);
+            if (row.Indented) ImGui.Unindent(Theme.S(14));
+
+            ImGui.TableNextColumn();
+            if (Ui.IconButton(FontAwesomeIcon.FolderOpen, "reveal", "Show in Explorer"))
+                Reveal(row.Paths.Folders.Concat(row.Paths.Files).First());
+
+            ImGui.PopID();
+        }
+
+        ImGui.EndTable();
+    }
+
+    private static List<ResultRow> BuildResultRows(SimsPackageInspector.ExtractionResult result)
+    {
+        var rows = new List<ResultRow>();
+        var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var swatches = SafeFiles(result.DiffuseFolder).Where(FileDrop.IsImage).OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+        if (swatches.Count > 0)
+        {
+            rows.Add(new ResultRow("Diffuse swatches", $"folder · {swatches.Count} image(s) → a variant group",
+                DroppedPaths.Folder(result.DiffuseFolder), result.DiffuseFolder, true, false, false, false));
+            foreach (var file in swatches)
+            {
+                listed.Add(file);
+                rows.Add(new ResultRow(Path.GetFileName(file), "one swatch", DroppedPaths.File(file), file, false, false, false, true));
+            }
+        }
+
+        void AddTexture(string? file, string role)
+        {
+            if (file == null || !File.Exists(file) || !listed.Add(file)) return;
+            rows.Add(new ResultRow(Path.GetFileName(file), role, DroppedPaths.File(file), file, false, false, false, false));
+        }
+
+        AddTexture(result.NormalFile, "normal");
+        AddTexture(result.SpecularFile, "specular");
+
+        var texturesRoot = Path.Combine(result.RootFolder, "textures");
+        foreach (var file in SafeFilesRecursive(texturesRoot).Where(FileDrop.IsImage).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            AddTexture(file, Path.GetFileName(Path.GetDirectoryName(file)) ?? "texture");
+
+        foreach (var file in SafeFiles(result.ModelFolder).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+        {
+            bool mdl = FileDrop.IsModel(file);
+            bool mesh = mdl || Path.GetExtension(file).ToLowerInvariant() is ".glb" or ".gltf" or ".fbx" or ".obj";
+            if (!mesh) continue;
+            rows.Add(new ResultRow(Path.GetFileName(file),
+                mdl ? "model" : "needs converting to .mdl in Blender first",
+                DroppedPaths.File(file), null, false, true, !mdl, false));
+        }
+
+        return rows;
+    }
+
+    private static IEnumerable<string> SafeFiles(string folder)
+    {
+        try { return Directory.Exists(folder) ? Directory.EnumerateFiles(folder).ToList() : new List<string>(); }
+        catch (Exception) { return Array.Empty<string>(); }
+    }
+
+    private static IEnumerable<string> SafeFilesRecursive(string folder)
+    {
+        try { return Directory.Exists(folder) ? Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).ToList() : new List<string>(); }
+        catch (Exception) { return Array.Empty<string>(); }
+    }
+
+    private static void Reveal(string path)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", Directory.Exists(path) ? $"\"{path}\"" : $"/select,\"{path}\"")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning(ex, "[XPS] Could not open Explorer at {0}", path);
         }
     }
 
@@ -510,6 +646,7 @@ public sealed class SimsImportWindow : Window, IDisposable
             {
                 var result = extractTask.Result;
                 _extraction = result;
+                _results    = BuildResultRows(result);
                 _status     = $"Done — {result.Extracted} file(s) written to {result.RootFolder}";
                 Plugin.Log.Information("[XPS] Sims extraction: {0} written, {1} failed, into {2}",
                     result.Extracted, result.Failed, result.RootFolder);

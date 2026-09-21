@@ -3,6 +3,7 @@ using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Dalamud.Interface.DragDrop;
 using Dalamud.Interface.Windowing;
 using XIVPortStudio.Models;
 using XIVPortStudio.Services;
@@ -19,13 +20,32 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog              Log             { get; private set; } = null!;
     [PluginService] internal static IDataManager            DataManager     { get; private set; } = null!;
     [PluginService] internal static ITextureProvider         TextureProvider { get; private set; } = null!;
+    [PluginService] internal static IDragDropManager         DragDrop        { get; private set; } = null!;
+    [PluginService] internal static IFramework                Framework       { get; private set; } = null!;
 
     // ── Plugin internals ──────────────────────────────────────────────────────
     internal Configuration        Configuration  { get; }
     internal PenumbraIpcService   PenumbraIpc    { get; }
-    internal GameDataService      GameData       { get; }
 
-    /// <summary>The set-up of the selected item: what every stage of the main window edits.</summary>
+    /// <summary>Texture conversion handed to Penumbra, which does it in native code.</summary>
+    internal PenumbraTextureConverter PenumbraTextures { get; }
+    internal GameDataService      GameData       { get; }
+    internal MaterialTemplates    MaterialTemplates { get; }
+
+    /// <summary>Material lists read out of the local .mdl files the set-up points at.</summary>
+    internal ModelFileCache       ModelFiles     { get; } = new();
+
+    /// <summary>Sizes of the source images the set-up points at, read from their headers.</summary>
+    internal ImageFileCache       ImageFiles     { get; } = new();
+
+    /// <summary>
+    /// Where converted textures are kept between builds. Compressing an image is the slowest part of
+    /// a build, and a port is built many times over while it is worked out, so the result is kept
+    /// here and reused until the source file changes.
+    /// </summary>
+    internal string TextureCacheDirectory { get; }
+
+    /// <summary>The modpack being edited: what every stage of the main window reads and edits.</summary>
     internal PortSession           Session    { get; }
     internal BuildController       Builds     { get; }
     internal TextureThumbnailCache Thumbnails { get; }
@@ -44,15 +64,19 @@ public sealed class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         PenumbraIpc = new PenumbraIpcService(PluginInterface, Log);
+        PenumbraTextures = new PenumbraTextureConverter(PenumbraIpc);
         GameData    = new GameDataService(DataManager, Log);
 
         // Reading the whole Item sheet takes a moment; do it off the render thread so
         // loading the plugin does not hitch the game. The item browser shows a wait state.
         _ = GameData.WarmUpAsync();
+        MaterialTemplates = new MaterialTemplates(GameData, PluginInterface.AssemblyLocation.DirectoryName ?? string.Empty);
+        TextureCacheDirectory = System.IO.Path.Combine(PluginInterface.GetPluginConfigDirectory(), "texcache");
 
         Session    = new PortSession(this);
         Builds     = new BuildController(this, Session);
         Thumbnails = new TextureThumbnailCache();
+        FileDrop.Initialize(DragDrop);
 
         // ── Windows ───────────────────────────────────────────────────────────
         ConfigWindow     = new ConfigWindow(this);

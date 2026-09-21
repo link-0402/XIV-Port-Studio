@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
@@ -9,6 +10,9 @@ using XIVPortStudio.Services;
 namespace XIVPortStudio.Windows.UI;
 
 internal enum PathKind { File, Folder }
+
+/// <summary>Lets a path field take dropped files: why a drop would be refused (null = accepted), and what to do with it.</summary>
+internal sealed record FileDropRule(Func<DroppedPaths, string?> Reject, Action<DroppedPaths> OnDrop);
 
 /// <summary>
 /// Shared drawing vocabulary: section headers, label/field rows, icon buttons, path
@@ -141,13 +145,15 @@ internal static class Ui
     /// because the dialog completes on a later frame.
     /// </summary>
     public static bool PathPicker(string id, ref string path, string hint, PathKind kind, string filter,
-        Action<string> onPicked, string? help = null, float reserveRight = 0)
+        Action<string> onPicked, string? help = null, float reserveRight = 0, FileDropRule? drop = null)
     {
         float buttonW = ImGui.GetFrameHeight();
         ImGui.SetNextItemWidth(-(buttonW + ImGui.GetStyle().ItemInnerSpacing.X + reserveRight));
         bool changed = ImGui.InputTextWithHint($"##{id}", hint, ref path, 1024);
         if (ImGui.IsItemHovered() && !string.IsNullOrEmpty(path))
             ImGui.SetTooltip(help != null ? $"{path}\n\n{help}" : path);
+        if (drop != null && FileDrop.Target(drop.Reject, out var dropped))
+            drop.OnDrop(dropped);
 
         ImGui.SameLine(0, ImGui.GetStyle().ItemInnerSpacing.X);
         if (IconButton(kind == PathKind.Folder ? FontAwesomeIcon.FolderOpen : FontAwesomeIcon.File,
@@ -175,6 +181,23 @@ internal static class Ui
         }
 
         return changed;
+    }
+
+    /// <summary>
+    /// A button that opens a multi-file picker and hands the picked paths to
+    /// <paramref name="onPicked"/> once the dialog completes (on a later frame).
+    /// </summary>
+    public static bool PickMultipleFiles(string id, string label, string filter, Action<List<string>> onPicked, string? startFrom = null)
+    {
+        const int maxSelection = 64;
+        bool clicked = ImGui.Button($"{label}##{id}");
+        if (clicked)
+        {
+            var start = (startFrom != null ? StartDirectory(startFrom) : null) ?? string.Empty;
+            void Done(bool ok, List<string> picked) { if (ok && picked.Count > 0) onPicked(picked); }
+            Dialogs.OpenFileDialog("Select files", filter, Done, maxSelection, start, false);
+        }
+        return clicked;
     }
 
     private static string? StartDirectory(string path)
@@ -257,6 +280,32 @@ internal static class Ui
         return ImGui.IsItemDeactivated();
     }
 
+    /// <summary>
+    /// A draggable horizontal divider between two stacked regions. With <paramref name="invert"/>,
+    /// dragging down shrinks the size (for the lower pane). Returns true on the frame the drag
+    /// ends, so the caller can persist the height once.
+    /// </summary>
+    public static bool HorizontalSplitter(string id, ref float size, float min, float max, float width, bool invert = false)
+    {
+        var pos = ImGui.GetCursorScreenPos();
+        ImGui.InvisibleButton(id, new System.Numerics.Vector2(width, Theme.SplitterWidth));
+
+        bool hot = ImGui.IsItemHovered() || ImGui.IsItemActive();
+        if (hot)
+            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeNs);
+        if (ImGui.IsItemActive())
+        {
+            float delta = ImGui.GetIO().MouseDelta.Y;
+            size = Math.Clamp(size + (invert ? -delta : delta), min, Math.Max(min, max));
+        }
+
+        float y = pos.Y + Theme.SplitterWidth * 0.5f;
+        ImGui.GetWindowDrawList().AddLine(new System.Numerics.Vector2(pos.X, y), new System.Numerics.Vector2(pos.X + width, y),
+            ImGui.GetColorU32(hot ? Theme.Accent : Theme.Band with { W = 0.10f }), hot ? 2f : 1f);
+
+        return ImGui.IsItemDeactivated();
+    }
+
     /// <summary>Disables every widget drawn inside the using-block when <paramref name="disabled"/> is set.</summary>
     public static DisabledScope Disabled(bool disabled) => new(disabled);
 
@@ -267,10 +316,13 @@ internal static class Ui
         public void Dispose() { if (_on) ImGui.EndDisabled(); }
     }
 
-    /// <summary>Right-aligns the next item of the given width on the current line.</summary>
+    /// <summary>
+    /// Right-aligns the next item of the given width on the current line. Measured from the space
+    /// left, not the window's content edge, so it also stays inside a table cell.
+    /// </summary>
     public static void AlignRight(float width)
     {
-        float x = ImGui.GetContentRegionMax().X - width;
+        float x = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - width;
         if (x > ImGui.GetCursorPosX())
             ImGui.SameLine(x);
     }

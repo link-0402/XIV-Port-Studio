@@ -35,11 +35,16 @@ public readonly struct VanillaElementId
     { ElementId = elementId; ParentBoneName = parentBoneName; Translate = translate; Rotate = rotate; }
 }
 
+/// <summary>
+/// One bone table: the bones a mesh may reference, as indices into the model's bone list.
+/// V5 stores a fixed 64-entry array per table, V6 a header pointing at a packed array, so only
+/// the used entries are kept here and the writer lays them out to suit the version.
+/// </summary>
 public readonly struct VanillaBoneTable
 {
     public readonly ushort[] BoneIndex;
-    public readonly byte BoneCount;
-    public VanillaBoneTable(ushort[] boneIndex, byte boneCount) { BoneIndex = boneIndex; BoneCount = boneCount; }
+    public ushort BoneCount => (ushort)BoneIndex.Length;
+    public VanillaBoneTable(ushort[] boneIndex) { BoneIndex = boneIndex; }
 }
 
 public readonly struct VanillaBoundingBox
@@ -74,10 +79,14 @@ public readonly struct VanillaBoundingBox
 /// </summary>
 public static class VanillaModelReader
 {
+    /// <summary>Model file versions: V6 is what Dawntrail ships, V5 the older layout.</summary>
+    public const uint V5 = 0x01000005;
+    public const uint V6 = 0x01000006;
+
     private const int FileHeaderSize = 68;
     private const int ModelHeaderSize = 56;
     private const int LodStructSize = 60;
-    private const int ExtraLodStructSize = 38;
+    private const int ExtraLodStructSize = 40;   // 20 ushorts, per Lumina's ExtraLodStruct
     private const int ElementIdStructSize = 32;
     private const int MeshStructSize = 36;
     private const int TerrainShadowMeshStructSize = 20;
@@ -165,18 +174,38 @@ public static class VanillaModelReader
         var boneTables = new VanillaBoneTable[boneTableCount];
         for (int i = 0; i < boneTableCount; i++)
         {
-            var boneIndex = new ushort[64];
-            for (int k = 0; k < 64; k++) boneIndex[k] = br.ReadUInt16();
-            byte tableBoneCount = br.ReadByte();
-            br.ReadBytes(3); // padding
-            boneTables[i] = new VanillaBoneTable(boneIndex, tableBoneCount);
+            if (version >= V6)
+            {
+                // V6: a 4-byte header per table, with the index array stored after all headers.
+                // The offset counts 4-byte units from this header's own position.
+                long headerPos = ms.Position;
+                ushort offset = br.ReadUInt16();
+                ushort size   = br.ReadUInt16();
+                long after    = ms.Position;
+
+                ms.Position = headerPos + offset * 4;
+                var indices = new ushort[size];
+                for (int k = 0; k < size; k++) indices[k] = br.ReadUInt16();
+                boneTables[i] = new VanillaBoneTable(indices);
+
+                ms.Position = after;
+            }
+            else
+            {
+                // V5: 64 indices then the count, used or not.
+                var indices = new ushort[64];
+                for (int k = 0; k < 64; k++) indices[k] = br.ReadUInt16();
+                uint tableBoneCount = br.ReadUInt32();
+                boneTables[i] = new VanillaBoneTable(indices[..(int)Math.Min(tableBoneCount, 64u)]);
+            }
         }
 
         // ── Jump straight to the bounding boxes, skipping Shapes/ShapeMeshes/
         //    ShapeValues/SubmeshBoneMap — not needed, and not reliably skippable
-        //    from here (see class doc). The model-data block's declared total
-        //    size tells us exactly where they end regardless of their contents.
-        long boundingBoxStart = modelHeaderOffset + runtimeSize - (4 + boneCount) * (long)BoundingBoxStructSize;
+        //    from here (see class doc). RuntimeSize covers everything from the string
+        //    block to the last bounding box, so the boxes sit at its very end.
+        long modelDataEnd = FileHeaderSize + stackSize + runtimeSize;
+        long boundingBoxStart = modelDataEnd - (4 + boneCount) * (long)BoundingBoxStructSize;
         ms.Position = boundingBoxStart;
 
         VanillaBoundingBox ReadBox()

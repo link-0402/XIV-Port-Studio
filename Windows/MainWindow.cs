@@ -14,8 +14,8 @@ namespace XIVPortStudio.Windows;
 
 /// <summary>
 /// The studio window. Three regions under a toolbar, above a status bar:
-///   left   – item browser: the item the port replaces;
-///   middle – stage tabs (Item → Models → Materials → Build) and the active stage's canvas;
+///   left   – the modpack: every item in it, and which one the Details stage shows;
+///   middle – stage tabs (Browse → Details → Mod Info → Build) and the active stage's canvas;
 ///   right  – inspector for whatever the canvas has selected.
 /// Both dividers are draggable. The window itself only lays out regions and runs the
 /// per-frame ticks (saving, validation, build completion); the stages draw themselves.
@@ -28,7 +28,7 @@ public sealed class MainWindow : Window, IDisposable
     private readonly Plugin _plugin;
     private readonly PortSession _session;
     private readonly BuildController _builds;
-    private readonly ItemBrowserPanel _browser;
+    private readonly ModpackList _pack;
     private readonly IStagePanel[] _stages;
 
     private int _validatedRevision = -1;
@@ -46,12 +46,12 @@ public sealed class MainWindow : Window, IDisposable
         SizeCondition = ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(820, 460) };
 
-        _browser = new ItemBrowserPanel(plugin, session);
-        _stages  = new IStagePanel[]
+        _pack   = new ModpackList(plugin, session);
+        _stages = new IStagePanel[]
         {
-            new ItemStagePanel(plugin, session),
-            new ModelsPanel(plugin, session),
-            new MaterialsPanel(plugin, session, thumbnails),
+            new BrowsePanel(plugin, session),
+            new DetailsPanel(plugin, session, thumbnails),
+            new ModInfoPanel(plugin, session),
             new BuildPanel(plugin, session, builds),
         };
     }
@@ -67,6 +67,8 @@ public sealed class MainWindow : Window, IDisposable
     public override void Draw()
     {
         _penumbraAvailable = _plugin.PenumbraIpc.IsAvailable;
+        _session.EnsureLoaded();
+        FileDrop.BeginExternalSource();
         Revalidate();
 
         DrawToolbar();
@@ -91,7 +93,7 @@ public sealed class MainWindow : Window, IDisposable
 
         _validatedRevision = _session.Revision;
         _sinceValidated.Restart();
-        _session.Issues = PortValidator.Validate(_session, _plugin.GameData, _penumbraAvailable);
+        _session.Issues = PortValidator.Validate(_session, _plugin.GameData, _plugin.MaterialTemplates, _plugin.ModelFiles, _plugin.ImageFiles, _penumbraAvailable);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -105,10 +107,12 @@ public sealed class MainWindow : Window, IDisposable
             _plugin.ToggleSimsImport();
 
         ImGui.SameLine();
-        using (Ui.Disabled(_session.Subject == null))
+        using (Ui.Disabled(_session.Items.Count == 0))
         {
             if (Ui.IconTextButton(FontAwesomeIcon.Undo, "Reset",
-                    "Clears all models, materials and the mod name configured for the selected item or feature."))
+                    _session.Items.Count == 0
+                        ? "The modpack is already empty."
+                        : "Removes every item from the modpack, along with its race models and materials."))
                 _openReset = true;
         }
 
@@ -133,12 +137,13 @@ public sealed class MainWindow : Window, IDisposable
         if (!ImGui.BeginPopupModal(ConfirmResetId, ImGuiWindowFlags.AlwaysAutoResize))
             return;
 
-        ImGui.TextUnformatted($"Reset all models, materials and the mod name for \"{_session.Subject?.DisplayName}\"?");
+        ImGui.TextUnformatted($"Remove all {_session.Items.Count} item(s) from the modpack, with their race models and materials?");
+        ImGui.TextColored(Theme.Muted, "The mod's name, description and author are kept.");
         ImGui.TextColored(Theme.Bad, "This cannot be undone.");
         ImGui.Spacing();
         if (ImGui.Button("Reset", new Vector2(Theme.S(100), 0)))
         {
-            _session.ResetItem();
+            _session.ResetModpack();
             ImGui.CloseCurrentPopup();
         }
         ImGui.SameLine();
@@ -161,8 +166,8 @@ public sealed class MainWindow : Window, IDisposable
         float browserW   = Math.Clamp(Theme.S(cfg.BrowserWidth),   minW, Math.Max(minW, total * 0.4f));
         float inspectorW = Math.Clamp(Theme.S(cfg.InspectorWidth), minW, Math.Max(minW, total - browserW - minW - split * 2));
 
-        if (ImGui.BeginChild("##Browser", new Vector2(browserW, height), true))
-            _browser.Draw();
+        if (ImGui.BeginChild("##Pack", new Vector2(browserW, height), true))
+            _pack.Draw();
         ImGui.EndChild();
 
         // While a divider is dragged its width is written through every frame (the next frame
@@ -220,6 +225,10 @@ public sealed class MainWindow : Window, IDisposable
             if (clicked)
                 _session.GoToStage(stage.Id);
 
+            // Gear dragged from the browser can be dropped on the File Setup tab from any stage.
+            if (stage.Id == StageId.Details && SubjectDrop.Target() is { } dropped)
+                _session.AddItem(dropped);
+
             DrawStageBadge(stage.Id);
         }
         ImGui.PopStyleVar();
@@ -274,8 +283,8 @@ public sealed class MainWindow : Window, IDisposable
 
         var issueColor = errors > 0 ? Theme.Bad : warnings > 0 ? Theme.Warn : Theme.Good;
         var issueIcon  = errors > 0 ? FontAwesomeIcon.TimesCircle : warnings > 0 ? FontAwesomeIcon.ExclamationTriangle : FontAwesomeIcon.CheckCircle;
-        var issueText  = _session.Subject == null ? "Nothing selected"
-                       : _session.Models.Count == 0 && _session.Materials.Count == 0 ? "Nothing set up yet"
+        var issueText  = _session.Items.Count == 0 ? "Nothing in the modpack"
+                       : !_session.Items.Exists(i => i.HasWork) ? "Nothing set up yet"
                        : errors + warnings == 0 ? "Ready to build"
                        : $"{errors} error(s), {warnings} warning(s)";
 

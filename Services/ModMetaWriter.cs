@@ -19,16 +19,19 @@ public sealed class ModVariantGroup
 }
 
 /// <summary>
-/// An Eqdp (Equipment Deformer Parameter) override: tells Penumbra that a given
-/// race/gender has its own model for this item, instead of falling back to
-/// another race's file. Needed whenever a model is set up for a race that
-/// doesn't have a native model entry by default.
+/// An Eqdp (Equipment Deformer Parameter) override: tells the game that a race has files of its
+/// own for this item — a model, a material, or both (see <see cref="EqdpInfo"/>). Needed whenever a
+/// port writes a model for a race the game gives none, and whenever it writes a material under a
+/// base race the game has no material entry for.
 /// </summary>
 public sealed class ModEqdpOverride
 {
     public required RaceGender RaceGender { get; init; }
     public required EquipSlot  Slot       { get; init; }
     public required ushort     SetId      { get; init; }
+
+    /// <summary>The slot's bits as they should end up: what the game already grants, plus what this port needs.</summary>
+    public required ushort     Entry      { get; init; }
 }
 
 /// <summary>
@@ -48,6 +51,32 @@ public sealed class ModImcOverride
     public required byte      MaterialAnimationId  { get; init; }
     public required ushort    AttributeMask        { get; init; }
     public required byte      SoundId              { get; init; }
+}
+
+/// <summary>
+/// An Eqp (Equipment Parameter) override: what a piece hides or shows on the rest of the
+/// character. <see cref="Entry"/> is the whole 64-bit entry, as Penumbra serialises it; only the
+/// bytes of the item's own slot are meaningful, the rest are carried over from the game's entry.
+/// </summary>
+public sealed class ModEqpOverride
+{
+    public required EquipSlot Slot  { get; init; }
+    public required ushort    SetId { get; init; }
+    public required ulong     Entry { get; init; }
+}
+
+/// <summary>
+/// An Est (Extra Skeleton Table) override: which skeleton a race uses for a hair id, which is
+/// what lets a ported hairstyle keep its physics on a race the game has no entry for.
+/// </summary>
+public sealed class ModEstOverride
+{
+    public required RaceGender RaceGender { get; init; }
+    public required ushort     SetId      { get; init; }
+    public required ushort     SkeletonId { get; init; }
+
+    /// <summary>Penumbra's EstType member name; only hair is offered for now.</summary>
+    public string Slot { get; init; } = "Hair";
 }
 
 /// <summary>The mod's identity and descriptive fields as written into meta.json.</summary>
@@ -81,10 +110,14 @@ public static class ModMetaWriter
         IReadOnlyList<ModVariantGroup> groups,
         IReadOnlyList<ModEqdpOverride>? eqdpOverrides = null,
         IReadOnlyList<ModImcOverride>? imcOverrides = null,
-        ModMetaInfo? info = null)
+        ModMetaInfo? info = null,
+        IReadOnlyList<ModEqpOverride>? eqpOverrides = null,
+        IReadOnlyList<ModEstOverride>? estOverrides = null)
     {
         eqdpOverrides ??= Array.Empty<ModEqdpOverride>();
         imcOverrides  ??= Array.Empty<ModImcOverride>();
+        eqpOverrides  ??= Array.Empty<ModEqpOverride>();
+        estOverrides  ??= Array.Empty<ModEstOverride>();
         info          ??= new ModMetaInfo();
 
         using var stream = File.Create(Path.Combine(modPath, "meta.json"));
@@ -100,13 +133,14 @@ public static class ModMetaWriter
         j.WriteString("Version", info.Version);
         j.WriteString("Website", info.Website);
 
-        if (defaultFiles.Count > 0 || eqdpOverrides.Count > 0 || imcOverrides.Count > 0)
+        bool anyManipulation = eqdpOverrides.Count > 0 || imcOverrides.Count > 0 || eqpOverrides.Count > 0 || estOverrides.Count > 0;
+        if (defaultFiles.Count > 0 || anyManipulation)
         {
             j.WriteStartObject("DefaultData");
             if (defaultFiles.Count > 0)
                 WriteFiles(j, defaultFiles);
-            if (eqdpOverrides.Count > 0 || imcOverrides.Count > 0)
-                WriteManipulations(j, eqdpOverrides, imcOverrides);
+            if (anyManipulation)
+                WriteManipulations(j, eqdpOverrides, imcOverrides, eqpOverrides, estOverrides);
             j.WriteEndObject();
         }
 
@@ -170,41 +204,44 @@ public static class ModMetaWriter
     }
 
     /// <summary>
-    /// Bit offset of a slot's 2-bit (Material, Model) pair within an Eqdp entry.
-    /// Equipment and accessory slots each have their own file, so the two small
-    /// offset ranges (0/2/4/6/8) don't collide. Mirrors Penumbra's Eqdp.Offset.
-    /// </summary>
-    private static int EqdpOffset(EquipSlot slot) => slot switch
-    {
-        EquipSlot.Head      => 0,
-        EquipSlot.Body      => 2,
-        EquipSlot.Hands     => 4,
-        EquipSlot.Legs      => 6,
-        EquipSlot.Feet      => 8,
-        EquipSlot.Earring   => 0,
-        EquipSlot.Neck      => 2,
-        EquipSlot.Wrists    => 4,
-        EquipSlot.RingRight => 6,
-        EquipSlot.RingLeft  => 8,
-        _                   => throw new ArgumentOutOfRangeException(nameof(slot)),
-    };
-
     private static void WriteManipulations(Utf8JsonWriter j, IReadOnlyList<ModEqdpOverride> eqdpOverrides,
-        IReadOnlyList<ModImcOverride> imcOverrides)
+        IReadOnlyList<ModImcOverride> imcOverrides, IReadOnlyList<ModEqpOverride> eqpOverrides,
+        IReadOnlyList<ModEstOverride> estOverrides)
     {
         j.WriteStartArray("Manipulations");
 
+        foreach (var o in eqpOverrides)
+        {
+            j.WriteStartObject();
+            j.WriteString("Type", "Eqp");
+            j.WriteStartObject("Manipulation");
+            j.WriteNumber("Entry", o.Entry);
+            j.WriteNumber("SetId", o.SetId);
+            j.WriteString("Slot", SlotInfo.LabelMap[o.Slot]);
+            j.WriteEndObject();
+            j.WriteEndObject();
+        }
+
+        foreach (var o in estOverrides)
+        {
+            j.WriteStartObject();
+            j.WriteString("Type", "Est");
+            j.WriteStartObject("Manipulation");
+            j.WriteNumber("Entry", o.SkeletonId);
+            j.WriteString("Gender", o.RaceGender.PenumbraGender);
+            j.WriteString("Race", o.RaceGender.PenumbraRace);
+            j.WriteNumber("SetId", o.SetId);
+            j.WriteString("Slot", o.Slot);
+            j.WriteEndObject();
+            j.WriteEndObject();
+        }
+
         foreach (var o in eqdpOverrides)
         {
-            // Grant this race/gender its own Model for the slot, without claiming a
-            // unique Material — texture lookups keep falling back to the shared
-            // base-race material this tool always writes (see MaterialNaming).
-            int entry = 1 << (EqdpOffset(o.Slot) + 1);
-
             j.WriteStartObject();
             j.WriteString("Type", "Eqdp");
             j.WriteStartObject("Manipulation");
-            j.WriteNumber("Entry", entry);
+            j.WriteNumber("Entry", o.Entry);
             j.WriteString("Gender", o.RaceGender.PenumbraGender);
             j.WriteString("Race", o.RaceGender.PenumbraRace);
             j.WriteNumber("SetId", o.SetId);
