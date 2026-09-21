@@ -78,7 +78,14 @@ internal static class FileDrop
         ImGui.EndDragDropSource();
     }
 
-    /// <summary>What is being dragged right now, from either source, or null.</summary>
+    /// <summary>
+    /// What is being dragged right now, from either source, or null. For the external source this
+    /// has to stay readable for a couple of frames past the drop itself: Dalamud flips
+    /// <see cref="IDragDropManager.IsDragging"/> back to false the instant the drop lands, before
+    /// <see cref="Target"/> gets a chance to call <see cref="IDragDropManager.CreateImGuiTarget"/> and
+    /// consume it — checking <c>IsDragging</c> here as well as Dalamud already does internally would
+    /// make every external drop silently vanish right when it lands.
+    /// </summary>
     private static DroppedPaths? Dragging()
     {
         var payload = ImGui.GetDragDropPayload();
@@ -86,8 +93,8 @@ internal static class FileDrop
             return null;
         if (payload.IsDataType(InternalLabel))
             return _internal;
-        if (payload.IsDataType(ExternalLabel) && _external is { IsDragging: true } ext)
-            return new DroppedPaths(ext.Files.ToList(), ext.Directories.ToList());
+        if (payload.IsDataType(ExternalLabel) && _external != null)
+            return new DroppedPaths(_external.Files.ToList(), _external.Directories.ToList());
         return null;
     }
 

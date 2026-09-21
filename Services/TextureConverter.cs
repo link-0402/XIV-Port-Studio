@@ -295,11 +295,21 @@ public static class TextureConverter
     }
 
     private static CompressionFormat BcFormatOf(TextureCompression compression)
-        => compression == TextureCompression.Bc3 ? CompressionFormat.Bc3 : CompressionFormat.Bc7;
+        => compression switch
+        {
+            TextureCompression.Bc3 => CompressionFormat.Bc3,
+            TextureCompression.Bc5 => CompressionFormat.Bc5,
+            _                      => CompressionFormat.Bc7,
+        };
 
     /// <summary>The game format code a compression choice produces, for the DDS passthrough check.</summary>
     private static uint TexFormatOf(TextureCompression compression)
-        => compression == TextureCompression.Bc3 ? FormatBC3 : FormatBC7;
+        => compression switch
+        {
+            TextureCompression.Bc3 => FormatBC3,
+            TextureCompression.Bc5 => FormatBC5,
+            _                      => FormatBC7,
+        };
 
     /// <summary>Turns the encoder per-block reports into a 0-1 fraction, without flooding the caller.</summary>
     private sealed class BlockProgress : IProgress<ProgressElement>

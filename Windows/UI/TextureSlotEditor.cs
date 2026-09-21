@@ -235,7 +235,7 @@ internal sealed class TextureSlotEditor
     // Shared pieces
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static readonly string[] CompressionLabels = { "None", "BC3", "BC7" };
+    private static readonly string[] CompressionLabels = { "None", "BC3", "BC7", "BC5" };
 
     /// <summary>
     /// What the texture is written as. The choice costs build time rather than anything else: BC7 is
@@ -266,6 +266,8 @@ internal sealed class TextureSlotEditor
             + "takes the better part of a minute, even across every core.\n"
             + "BC3 — the older block format, around twenty times quicker to compress, a little softer on "
             + "sharp gradients.\n"
+            + "BC5 — stores only red and green at full precision each; ideal for a colour set / index "
+            + "texture, whose blue and alpha channels go unused. About as quick to compress as BC3.\n"
             + "None — no compression. Instant to build, four times the size in game memory.\n\n"
             + "A texture is compressed once: the next build reuses it unless the image itself changes.");
         return edited;

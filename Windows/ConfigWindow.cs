@@ -11,7 +11,7 @@ namespace XIVPortStudio.Windows;
 /// <summary>Settings that apply across every item: defaults for new content, mod metadata, and layout.</summary>
 public sealed class ConfigWindow : Window, IDisposable
 {
-    private static readonly string[] CompressionLabels = { "None", "BC3", "BC7" };
+    private static readonly string[] CompressionLabels = { "None", "BC3", "BC7", "BC5" };
 
     private readonly Plugin _plugin;
 
@@ -39,7 +39,9 @@ public sealed class ConfigWindow : Window, IDisposable
         }
         Ui.Tooltip("What texture slots you add from now on start on; existing slots keep their setting.\n\n"
                  + "BC7 is what the game uses itself and looks best, but a large image takes the better part of a "
-                 + "minute to compress. BC3 is around twenty times quicker. None ships the raw pixels.");
+                 + "minute to compress. BC3 is around twenty times quicker. BC5 only keeps red and green, which "
+                 + "is right for a colour set / index texture but drops blue and alpha on anything else — pick it "
+                 + "per-slot rather than as a blanket default. None ships the raw pixels.");
 
         bool thumbs = cfg.ShowThumbnails;
         if (ImGui.Checkbox("Show texture previews", ref thumbs))

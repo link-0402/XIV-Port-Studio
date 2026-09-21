@@ -319,20 +319,23 @@ internal sealed class ModelInspector
             {
                 var referenced = facts.Materials[slot];
                 int link = ModelMaterialLinks.Stored(stored, slot);
-                int resolved = ModelMaterialLinks.Resolve(link, slot, referenced, written);
+                int resolved = ModelMaterialLinks.Resolve(link, slot, facts.Materials, written);
 
                 ImGui.TableNextRow();
                 ImGui.PushID(slot);
 
                 ImGui.TableNextColumn();
                 ImGui.AlignTextToFramePadding();
-                bool kept = resolved < 0;
+                bool sharedFeature = ModelMaterialLinks.IsSharedFeature(referenced);
+                bool kept = resolved < 0 && !sharedFeature;
                 ImGui.TextColored(kept && written.Count > 0 ? Theme.Warn : Theme.Muted, Short(referenced));
                 Ui.Tooltip($"Mesh part {slot + 1} references {referenced}."
-                         + (kept && written.Count > 0 ? "\n\nLeft as it is, so this mod does not supply its material." : string.Empty));
+                         + (kept && written.Count > 0 ? "\n\nLeft as it is, so this mod does not supply its material."
+                          : sharedFeature ? "\n\nA shared body material (bibo / bibopube / piercings, etc.) — left alone on purpose."
+                          : string.Empty));
 
                 // The options read as what happens, so "Automatic" says which material it lands on.
-                int auto = ModelMaterialLinks.Resolve(ModelMaterialLinks.Auto, slot, referenced, written);
+                int auto = ModelMaterialLinks.Resolve(ModelMaterialLinks.Auto, slot, facts.Materials, written);
                 var options = new string[written.Count + 2];
                 options[0] = auto >= 0 ? $"Automatic \u2192 {Short(written[auto])}" : "Automatic \u2014 keep";
                 options[1] = "Keep the file's own";

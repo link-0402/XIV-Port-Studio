@@ -79,6 +79,11 @@ internal sealed class ModBuilder
         var report = new BuildReport { ModName = _req.ModName, ModPath = modPath, ItemsSummary = itemsSummary };
         var clock  = Stopwatch.StartNew();
 
+        // Whether this run is the one creating the mod folder, rather than writing into one that
+        // already exists (a rebuild). Only in the first case is it safe to remove the folder again
+        // on cancellation or failure — a rebuild's folder may still hold a previous, good build.
+        bool freshFolder = !Directory.Exists(modPath);
+
         try
         {
             _total = EstimateSteps();
@@ -135,6 +140,9 @@ internal sealed class ModBuilder
             report.FatalError = ex.Message;
         }
 
+        if (freshFolder && (report.Cancelled || report.FatalError != null))
+            DeleteLeftovers(modPath);
+
         _textures.Prune();
         report.Duration = clock.Elapsed;
         _job.Report(new BuildProgress(_total, _total, report.Cancelled ? "Cancelled" : "Done"));
@@ -142,6 +150,19 @@ internal sealed class ModBuilder
         Plugin.Log.Information("[XPS] Mod build for {0}: {1} ok, {2} skipped, {3} failed, {4} variant groups, {5} eqdp, {6} imc. Path: {7}",
             itemsSummary, report.Ok, report.Skipped, report.Failed, report.VariantGroups, report.EqdpOverrides, report.ImcOverrides, modPath);
         return report;
+    }
+
+    /// <summary>Removes a mod folder this run created but did not finish, so a cancelled or failed build leaves nothing behind.</summary>
+    private static void DeleteLeftovers(string modPath)
+    {
+        try
+        {
+            Directory.Delete(modPath, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning(ex, "[XPS] Could not remove leftover mod folder {0}", modPath);
+        }
     }
 
     /// <summary>
@@ -736,6 +757,7 @@ internal sealed class ModBuilder
         {
             TextureCompression.Bc7 => ", BC7",
             TextureCompression.Bc3 => ", BC3",
+            TextureCompression.Bc5 => ", BC5",
             _                      => string.Empty,
         };
         return $"{sourceName}{format}{(cached ? " (unchanged, reused)" : string.Empty)}";

@@ -107,7 +107,10 @@ public static class ShaderInfo
 /// What a texture is compressed to when the mod is built. BC7 is what the game itself uses for
 /// modern textures and keeps the most detail, but compressing one is slow — a 4096×4096 image takes
 /// the better part of a minute even across every core. BC3 is the older block format the game also
-/// reads: around twenty times quicker to compress, softer on sharp gradients. None writes the raw
+/// reads: around twenty times quicker to compress, softer on sharp gradients. BC5 only stores two
+/// channels (red and green) at full precision each, which is what the game's own index textures use —
+/// their blue and alpha channels go unused, so BC5 holds the two that matter (row and blend) more
+/// precisely than BC7 or BC3 would, for about the same compression cost as BC3. None writes the raw
 /// pixels, which costs nothing to build and four times the memory in game.
 /// </summary>
 public enum TextureCompression
@@ -115,6 +118,7 @@ public enum TextureCompression
     None,
     Bc3,
     Bc7,
+    Bc5,
 }
 
 public enum TextureType

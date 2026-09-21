@@ -144,7 +144,10 @@ internal static class PortValidator
         for (int slot = 0; slot < facts.Materials.Count; slot++)
         {
             var referenced = facts.Materials[slot];
-            if (ModelMaterialLinks.Resolve(ModelMaterialLinks.Stored(links, slot), slot, referenced, written) < 0
+            if (ModelMaterialLinks.IsSharedFeature(referenced))
+                continue;   // a shared body material (bibo / bibopube / piercings, etc.) — not this item's to assign
+
+            if (ModelMaterialLinks.Resolve(ModelMaterialLinks.Stored(links, slot), slot, facts.Materials, written) < 0
                 && ModelMaterialLinks.IndexOfName(written, referenced) < 0)
                 kept.Add($"{slot + 1} ({referenced.TrimStart('/')})");
         }
@@ -155,21 +158,11 @@ internal static class PortValidator
                 "the game loads whatever it already has at that name. Assign one of this item's materials to them."));
     }
 
-    /// <summary>The metadata overrides: EQP flags changed from the game's own, and EST skeletons per race.</summary>
+    /// <summary>The metadata overrides: EST skeletons per race. EQP and EST entries are meant to differ
+    /// from the game's own — that is what setting one does — so a changed entry is not itself
+    /// flagged here; only ones that would not actually work are.</summary>
     private static void ValidateMeta(PortItem item, GameDataService gameData, List<PortIssue> issues)
     {
-        var target = new Target(TargetKind.Item, item.Key);
-
-        if (item.Subject is GearSubject gear && item.Meta.EqpEntry is { } entry)
-        {
-            var vanilla = gameData.VanillaEqp(gear.Item.ModelId);
-            var changes = EqpInfo.Differences(gear.Item.Slot, vanilla, entry);
-            if (changes.Count > 0)
-                issues.Add(new(Severity.Info, target,
-                    $"{gear.Item.Name}: equipment parameters changed from the game's own ({string.Join(", ", changes)}) - " +
-                    "this applies to every item sharing this model id."));
-        }
-
         if (item.Subject is not FeatureSubject { Kind: SubjectKind.Hair } hair)
             return;
 

@@ -38,9 +38,10 @@ internal sealed class PenumbraTextureConverter
     {
         int type = compression switch
         {
-            TextureCompression.Bc7 => 7,   // Penumbra.Api TextureType.Bc7Tex
-            TextureCompression.Bc3 => 5,   // TextureType.Bc3Tex
-            _                      => 3,   // TextureType.RgbaTex
+            TextureCompression.Bc7 => 7,    // Penumbra.Api TextureType.Bc7Tex
+            TextureCompression.Bc3 => 5,    // TextureType.Bc3Tex
+            TextureCompression.Bc5 => 14,   // TextureType.Bc5Tex
+            _                      => 3,    // TextureType.RgbaTex
         };
 
         try

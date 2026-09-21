@@ -49,22 +49,55 @@ internal static class ModelMaterialLinks
     }
 
     /// <summary>
+    /// Material names that name a shared body / feature group — a common base body mod's own body
+    /// ("bibo"), its pubic overlay ("bibopube"), or its piercings — rather than anything an item
+    /// ported here would supply. These sit in some mesh material slots right alongside the slots an
+    /// item actually replaces. Automatic assignment must never guess at them by position: whatever
+    /// shared body mod the wearer has installed already supplies them, and repointing one at this
+    /// item's own material would silently break it for everyone using that shared group.
+    /// </summary>
+    private static readonly string[] SharedFeatureNameParts = { "bibo", "pube", "pierc" };
+
+    /// <summary>Whether a mesh part's own material name names one of the shared groups above.</summary>
+    public static bool IsSharedFeature(string referenced)
+    {
+        var name = Normalize(referenced);
+        foreach (var part in SharedFeatureNameParts)
+            if (name.Contains(part, StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    /// <summary>
     /// The material a slot ends up on: an index into the item's materials, or <see cref="Keep"/>.
     /// A stored index whose material has since been removed falls back to keeping the file's own
-    /// reference rather than silently pointing at a different material.
+    /// reference rather than silently pointing at a different material. <paramref name="referenced"/>
+    /// is every mesh part's own material name, in slot order, so the position fallback below can
+    /// skip shared groups rather than count them.
     /// </summary>
-    public static int Resolve(int stored, int slot, string referenced, IReadOnlyList<string> written)
+    public static int Resolve(int stored, int slot, IReadOnlyList<string> referenced, IReadOnlyList<string> written)
     {
         if (stored >= 0)
             return stored < written.Count ? stored : Keep;
         if (stored != Auto)
             return Keep;
 
-        int byName = IndexOfName(written, referenced);
+        var name = referenced[slot];
+        int byName = IndexOfName(written, name);
         if (byName >= 0)
             return byName;
 
-        return slot < written.Count ? slot : Keep;
+        if (IsSharedFeature(name))
+            return Keep;
+
+        // Position among only the slots that are not themselves a shared group, so those slots
+        // don't consume a position that belongs to one of the item's own materials.
+        int position = 0;
+        for (int i = 0; i < slot; i++)
+            if (!IsSharedFeature(referenced[i]))
+                position++;
+
+        return position < written.Count ? position : Keep;
     }
 
     /// <summary>
@@ -76,7 +109,7 @@ internal static class ModelMaterialLinks
         var plan = new string?[referenced.Count];
         for (int i = 0; i < referenced.Count; i++)
         {
-            int material = Resolve(Stored(links, i), i, referenced[i], written);
+            int material = Resolve(Stored(links, i), i, referenced, written);
             plan[i] = material >= 0 ? written[material] : null;
         }
         return plan;
